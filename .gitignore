@@ -92,10 +92,10 @@ logs/
 htmlcov/
 .tox/
 
-# Temporary files
-_*.py
-_*.txt
-_ocr_b64.txt
-_test.txt
+# Temporary files (à la racine uniquement — ne pas toucher aux __init__.py/__pycache__ des sous-dossiers)
+/_*.py
+/_*.txt
+/_ocr_b64.txt
+/_test.txt
 sqlite3.Connection
 -p
