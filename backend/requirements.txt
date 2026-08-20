@@ -1,0 +1,27 @@
+# Ecahier - Backend Dependencies
+# Python >= 3.10
+
+# Web framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+
+# Database
+asyncpg==0.29.0
+pydantic==2.5.3
+
+# Security
+cryptography==42.0.2
+
+# Environment
+python-dotenv==1.0.0
+
+# HTTP client (for sync)
+aiohttp==3.9.1
+
+# Testing
+pytest==7.4.4
+pytest-asyncio==0.23.3
+httpx==0.26.0
+
+# Code quality
+ruff==0.1.13

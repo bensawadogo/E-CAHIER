@@ -1,0 +1,101 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+
+# Environment
+.env
+.pii_key_dev
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Data (local databases, photos, storage)
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Flutter / Dart
+frontend/.dart_tool/
+frontend/.flutter-plugins
+frontend/.flutter-plugins-dependencies
+frontend/.packages
+frontend/.pub-cache/
+frontend/.pub/
+frontend/build/
+frontend/ios/Pods/
+frontend/ios/.symlinks/
+frontend/android/.gradle/
+frontend/android/local.properties
+frontend/coverage/
+frontend/doc/api/
+frontend/.fvm/
+frontend/.metadata
+
+# SDK Flutter complet (jamais versionné — 2,6 Go + zip 986 Mo)
+flutter/
+flutter.zip
+flutter.zip.*
+download_flutter.bat
+
+# Builds et caches locaux
+build/
+android/.gradle/
+ios/Pods/
+web/build/
+lib/generated/
+
+# Dossiers outils locaux (SDK, caches) en racine
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.metadata
+ecahier.iml
+
+# Frontends alternatifs / non retenus (tranché en TÂCHE 7)
+cahier_boutique_flutter/
+android/
+ios/
+desktop-tauri/
+lib/
+test/
+web/
+frontend/
+
+# Logs
+*.log
+logs/
+
+# Test
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Temporary files
+_*.py
+_*.txt
+_ocr_b64.txt
+_test.txt
+sqlite3.Connection
+-p
