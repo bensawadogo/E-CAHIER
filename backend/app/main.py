@@ -15,6 +15,7 @@ Contexte Burkina Faso :
 
 import logging
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -49,11 +50,37 @@ from backend.app.presentation.middleware import setup_middleware
 setup_logging()
 logger = logging.getLogger(__name__)
 
+
+# Contexte de vie de l'application → TÂCHE 4 : durabilité SQLite
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Gestion du cycle de vie : checkpoint WAL à l'arrêt.
+
+    Dans le contexte Burkina Faso (coupures secteur / arrachage câble USB),
+    on force un `wal_checkpoint(TRUNCATE)` à l'arrêt du serveur pour pousser
+    TOUTES les écritures du WAL-mode fichier DB principal. Cela garantit
+    l'intégrité des données même en cas d'arrêt brutal ultérieur.
+    """
+    logger.info("Démarrage application — SQLite WAL mode actif (synchronous=FULL)")
+    try:
+        yield
+    finally:
+        logger.info("Arrêt application — checkpoint WAL (TRUNCATE) sur %s", settings.SQLITE_PATH)
+        try:
+            sqlite_manager.close_connection()
+            sqlite_manager.get_connection()
+            sqlite_manager.get_connection().execute("PRAGMA wal_checkpoint(TRUNCATE);")
+            sqlite_manager.close_connection()
+            logger.info("Checkpoint WAL terminé et connexion fermée")
+        except Exception:
+            logger.error("Erreur pendant le checkpoint WAL à l'arrêt", exc_info=True)
+
 # Création de l'app FastAPI
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     description="API de gestion de caisse et de cahier de boutique — optimisée pour le Burkina Faso",
+    lifespan=lifespan,
 )
 
 # Middleware (CORS, logging)

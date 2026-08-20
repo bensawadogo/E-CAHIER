@@ -24,17 +24,25 @@ class SQLiteConnectionManager:
         self._connection: Optional[sqlite3.Connection] = None
 
     def _connect(self) -> sqlite3.Connection:
-        """Ouvre une nouvelle connexion à la base de données SQLite."""
+        """Ouvre une nouvelle connexion à la base de données SQLite.
+
+        PRAGMA centralisés pour la durabilité (contexte Burkina Faso :
+        risque de coupure secteur / arrachage de câble USB) :
+          - journal_mode = WAL        : lecture concurrente + pas de lock global
+          - synchronous  = FULL       : chaque écriture est flushée (aucune perte)
+          - busy_timeout = 5000       : évite les SQLite_BUSY en I/O concurrent
+          - foreign_keys = ON         : intégrité référentielle garantie
+        """
         conn = sqlite3.connect(
             self.db_path,
             check_same_thread=False,  # Nécessaire pour FastAPI (thread pool)
         )
+        conn.row_factory = sqlite3.Row  # accès aux colonnes par nom -> TÂCHE 6
         conn.execute("PRAGMA journal_mode = WAL;")
+        conn.execute("PRAGMA synchronous = FULL;")
+        conn.execute("PRAGMA busy_timeout = 5000;")
         conn.execute("PRAGMA foreign_keys = ON;")
-        # NORMAL est le meilleur compromis performances/durabilité avec WAL :
-        # pas de corruption, écritures jusqu'à 3-10x plus rapides qu'en FULL,
-        # idéal pour le stockage flash des téléphones bas de gamme.
-        conn.execute("PRAGMA synchronous = NORMAL;")
+        # NORMAL pouvait être utilisé sans WAL, mais FULL est requis ici.
         logger.info("Connexion SQLite ouverte: %s", self.db_path)
         return conn
 
