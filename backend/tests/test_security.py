@@ -71,6 +71,39 @@ class TestPIIEncryptor:
         enc = PIIEncryptor(key=key)
         assert enc.decrypt(enc.encrypt("data")) == "data"
 
+    def test_rotate_accepted_for_backward_compat(self):
+        # PIIEncryptor.rotate() doit re-chiffrer un token existant.
+        old_key = Fernet.generate_key()
+        legacy_token = Fernet(old_key).encrypt(b"+226 70 12 34 56").decode("utf-8")
+
+        new_key = Fernet.generate_key()
+        enc = PIIEncryptor(key=[new_key, old_key])
+        rotated = enc.rotate(legacy_token)
+
+        # La valeur re-chiffrée doit rester lisible
+        assert enc.decrypt(rotated) == "+226 70 12 34 56"
+
+    def test_transition_reads_legacy_token_but_new_token_uses_new_key(self):
+        # Pendant la transition, MultiFernet([nouvelle, ancienne]) :
+        #  - déchiffre un token produit par l'ancienne clé,
+        #  - chiffre les nouvelles valeurs avec la nouvelle clé (en tête de liste).
+        from cryptography.fernet import InvalidToken
+
+        old_key = Fernet.generate_key()
+        new_key = Fernet.generate_key()
+
+        legacy_token = Fernet(old_key).encrypt(b"+226 70 11 22 33").decode("utf-8")
+        enc = PIIEncryptor(key=[new_key, old_key])
+        assert enc.decrypt(legacy_token) == "+226 70 11 22 33"
+
+        # Une nouvelle valeur est chiffrée avec la nouvelle clé : l'ancienne seule
+        # ne peut PAS la lire.
+        fresh = enc.encrypt("secret-pii")
+        with pytest.raises(InvalidToken):
+            Fernet(old_key).decrypt(fresh.encode("utf-8"))
+        # Et elle est lisible par la nouvelle clé
+        assert Fernet(new_key).decrypt(fresh.encode("utf-8")) == b"secret-pii"
+
 
 # ---------------------------------------------------------------------------
 # PathSanitizer
