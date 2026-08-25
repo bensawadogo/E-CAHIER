@@ -30,6 +30,8 @@ class Settings:
     # Sécurité
     PII_ENCRYPTION_KEY: str = os.getenv("CAHIER_PII_ENCRYPTION_KEY", "")
     AUTH_SECRET: str = os.getenv("CAHIER_AUTH_SECRET", "")
+    # Token Bearer exigé sur les routes /api/* — vide = auth désactivée (dev local)
+    AUTH_TOKEN: str = os.getenv("CAHIER_AUTH_TOKEN", "")
 
     # Stockage
     PHOTOS_DIR: str = os.getenv("CAHIER_PHOTOS_DIR", "data/photos")

@@ -14,7 +14,18 @@ env/
 
 # Environment
 .env
-.pii_key_dev
+.pii_key*
+
+# Clés / certificats locaux (JAMAIS versionnés)
+*.pem
+*.key
+*.jks
+*.keystore
+android/keystore.properties
+
+# Outil tiers cloné localement (repo git imbriqué)
+graphify/
+graphify-out/
 
 # IDE
 .vscode/
@@ -73,13 +84,12 @@ lib/generated/
 ecahier.iml
 
 # Frontends alternatifs / non retenus (tranché en TÂCHE 7)
+# NOTE : lib/, test/ et web/ racine = vrai projet Flutter (pubspec name=ecahier) → versionnés.
+# Leurs artefacts restent ignorés via build/, web/build/ et lib/generated/ ci-dessus.
 cahier_boutique_flutter/
 android/
 ios/
 desktop-tauri/
-lib/
-test/
-web/
 frontend/
 
 # Logs

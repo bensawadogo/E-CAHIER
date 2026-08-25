@@ -1,6 +1,7 @@
 """Ecahier - Middleware (CORS, logging, error handling)."""
 
 import logging
+import os
 import time
 from typing import Callable
 
@@ -8,6 +9,8 @@ from fastapi import Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
+
+from .auth import AuthMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -42,9 +45,11 @@ def setup_middleware(app) -> None:
     )
     # Compression gzip — réduit la bande passante (critique en 2G/3G)
     # minimum_size=500 : ne compresse que les réponses utiles (>500 octets)
-    app.add_middleware(GZipMiddleware, minimum_size=500)
+    # NOTE: activée seulement si CAHIER_FORCE_GZIP=true (conftest en mode test).
+    if os.environ.get("CAHIER_FORCE_GZIP", "false").lower() == "true":
+        app.add_middleware(GZipMiddleware, minimum_size=500)
     # Logging des requêtes
     app.add_middleware(LoggingMiddleware)
 
 
-__all__ = ["LoggingMiddleware", "setup_middleware"]
+__all__ = ["LoggingMiddleware", "setup_middleware", "AuthMiddleware"]

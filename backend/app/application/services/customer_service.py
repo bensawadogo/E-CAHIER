@@ -32,7 +32,8 @@ class CustomerService:
             photo_path=request.photo_path,
         )
         saved = self.customer_repository.add(customer)
-        logger.info("Client créé: %s (%s)", saved.name, saved.id)
+        # NOTE: ne pas logger le nom (PII) — l'ID suffit pour la traçabilité.
+        logger.info("Client créé: %s", saved.id)
         return saved
 
     def get_customer(self, customer_id: str) -> Optional[Customer]:

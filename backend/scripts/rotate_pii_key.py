@@ -102,7 +102,7 @@ def main(argv: list) -> None:
     legacy = _load_legacy_key()
 
     print(f"[rotate] Base : {db_path}")
-    print(f"[rotate] Rotation PII (principale={principal[:10]}..., transition={legacy[:10]}...)")
+    print(f"[rotate] Rotation PII (clé principale chargée [{len(principal)} car.], clé legacy de transition chargée [{len(legacy)} car.])")
     count = rotate_db(db_path, principal.encode("utf-8"), legacy)
     print(f"[rotate] Terminée : {count} ligne(s) re-chiffrée(s).")
     return 0

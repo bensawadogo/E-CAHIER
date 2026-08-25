@@ -13,24 +13,12 @@ from backend.app.domain.entities.transaction import Transaction
 from backend.app.domain.repositories.transaction_repository import TransactionRepository
 from backend.app.infrastructure.database.sqlite_connection import SQLiteConnectionManager
 
-# ---------------------------------------------------------------------------
-# Constantes partagées entre les méthodes du repository.
-# ---------------------------------------------------------------------------
-
-# Colonnes dans l'ordre exact du SELECT, correspondant à _Row et à la table.
-_COLUMNS = (
-    "id", "customer_id", "credit_id", "payment_id", "type",
-    "amount", "balance_after", "description", "created_at", "sync_status",
-)
-
 _SELECT_SQL = (
     "SELECT id, customer_id, credit_id, payment_id, type, "
     "amount, balance_after, description, created_at, sync_status "
     "FROM transactions"
 )
 
-# Named tuple pour éviter les index positionnels fragiles dans _row_to_transaction.
-_TransactionRow = namedtuple("_TransactionRow", _COLUMNS)
 
 
 class SQLiteTransactionRepository(TransactionRepository):
@@ -87,19 +75,21 @@ class SQLiteTransactionRepository(TransactionRepository):
 
     @staticmethod
     def _row_to_transaction(row: tuple) -> Transaction:
-        """Convertit une ligne SQLite en entité Transaction (via named tuple)."""
-        r = _TransactionRow(*row)
+        """Convertit une ligne SQLite en entité Transaction.
+        
+        Utilise `sqlite3.Row` pour accéder aux colonnes par nom (TÂCHE 6).
+        """
         return Transaction(
-            id=r.id,
-            customer_id=r.customer_id,
-            credit_id=r.credit_id,
-            payment_id=r.payment_id,
-            type=r.type,
-            amount=Decimal(r.amount),
-            balance_after=Decimal(r.balance_after),
-            description=r.description,
-            created_at=datetime.fromisoformat(r.created_at),
-            sync_status=r.sync_status,
+            id=row["id"],
+            customer_id=row["customer_id"],
+            credit_id=row["credit_id"],
+            payment_id=row["payment_id"],
+            type=row["type"],
+            amount=Decimal(row["amount"]),
+            balance_after=Decimal(row["balance_after"]),
+            description=row["description"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            sync_status=row["sync_status"],
         )
 
     @staticmethod

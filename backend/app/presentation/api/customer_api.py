@@ -15,6 +15,7 @@ from backend.app.application.dto.customer_dto import (
     CustomerListResponse,
 )
 from backend.app.application.services.customer_service import CustomerService
+from backend.app.config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/customers", tags=["customers"])
@@ -131,6 +132,17 @@ def update_customer(customer_id: str, request: UpdateCustomerRequest):
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+@router.post("/_echo", include_in_schema=False)
+def echo_payload(payload: dict):
+    """Endpoint de test pour la compression : renvoie le payload reçu.
+
+    Garde-fou : désactivé hors mode debug (404 en production).
+    """
+    if not settings.DEBUG:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    return payload
 
 
 @router.delete("/{customer_id}", status_code=status.HTTP_204_NO_CONTENT)

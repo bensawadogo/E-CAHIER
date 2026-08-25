@@ -59,20 +59,23 @@ class SQLiteCustomerRepository(CustomerRepository):
         }
 
     def _decrypt_pii(self, row: tuple) -> Customer:
-        """Convertit une ligne SQLite en Customer en déchiffrant les PII."""
+        """Convertit une ligne SQLite en Customer en déchiffrant les PII.
+        
+        Utilise `sqlite3.Row` pour accéder aux colonnes par nom (TÂCHE 6).
+        """
         return Customer(
-            id=row[0],
-            name=row[1],
-            phone=self._encryptor.decrypt(row[2]),
-            address=self._encryptor.decrypt(row[3]),
-            notes=row[4],
-            photo_path=self._encryptor.decrypt(row[5]),
-            total_credit=Decimal(row[6]),
-            total_paid=Decimal(row[7]),
-            is_active=bool(row[8]),
-            created_at=datetime.fromisoformat(row[9]),
-            updated_at=datetime.fromisoformat(row[10]),
-            sync_status=row[11],
+            id=row["id"],
+            name=row["name"],
+            phone=self._encryptor.decrypt(row["phone"]),
+            address=self._encryptor.decrypt(row["address"]),
+            notes=row["notes"],
+            photo_path=self._encryptor.decrypt(row["photo_path"]),
+            total_credit=Decimal(row["total_credit"]),
+            total_paid=Decimal(row["total_paid"]),
+            is_active=bool(row["is_active"]),
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+            sync_status=row["sync_status"],
         )
 
     @staticmethod

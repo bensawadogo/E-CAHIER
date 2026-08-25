@@ -64,19 +64,22 @@ class SQLitePaymentRepository(PaymentRepository):
 
     @staticmethod
     def _row_to_payment(row: tuple) -> Payment:
-        """Convertit une ligne SQLite en entité Payment."""
+        """Convertit une ligne SQLite en entité Payment.
+        
+        Utilise `sqlite3.Row` pour accéder aux colonnes par nom (TÂCHE 6).
+        """
         return Payment(
-            id=row[0],
-            customer_id=row[1],
-            credit_id=row[2],
-            amount=Decimal(row[3]),
-            method=row[4],
-            reference=row[5],
-            note=row[6],
-            payment_date=datetime.fromisoformat(row[7]),
-            created_at=datetime.fromisoformat(row[8]),
-            updated_at=datetime.fromisoformat(row[9]),
-            sync_status=row[10],
+            id=row["id"],
+            customer_id=row["customer_id"],
+            credit_id=row["credit_id"],
+            amount=Decimal(row["amount"]),
+            method=row["method"],
+            reference=row["reference"],
+            note=row["note"],
+            payment_date=datetime.fromisoformat(row["payment_date"]),
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+            sync_status=row["sync_status"],
         )
 
     def add(self, payment: Payment) -> Payment:

@@ -61,17 +61,20 @@ class SQLiteCreditRepository(CreditRepository):
 
     @staticmethod
     def _row_to_credit(row: tuple) -> Credit:
-        """Convertit une ligne SQLite en entité Credit."""
+        """Convertit une ligne SQLite en entité Credit.
+        
+        Utilise `sqlite3.Row` pour accéder aux colonnes par nom (TÂCHE 6).
+        """
         return Credit(
-            id=row[0],
-            customer_id=row[1],
-            amount=Decimal(row[2]),
-            description=row[3],
-            due_date=datetime.fromisoformat(row[4]),
-            status=row[5],
-            created_at=datetime.fromisoformat(row[6]),
-            updated_at=datetime.fromisoformat(row[7]),
-            sync_status=row[8],
+            id=row["id"],
+            customer_id=row["customer_id"],
+            amount=Decimal(row["amount"]),
+            description=row["description"],
+            due_date=datetime.fromisoformat(row["due_date"]),
+            status=row["status"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+            sync_status=row["sync_status"],
         )
 
     def add(self, credit: Credit) -> Credit:

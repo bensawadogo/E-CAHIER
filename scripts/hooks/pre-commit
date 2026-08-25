@@ -1,0 +1,11 @@
+#!/bin/sh
+# Pre-commit hook — bloque les secrets avant qu'ils entrent dans l'historique.
+# Installé via: git config core.hooksPath scripts/hooks
+
+echo "pre-commit: scan anti-secrets..."
+python scripts/check_secrets.py || {
+    echo ""
+    echo "COMMIT REFUSE : secret ou fichier sensible detecte (voir ci-dessus)."
+    echo "Pour commit une exception justifiee: git commit --no-verify (a eviter)."
+    exit 1
+}

@@ -22,6 +22,9 @@ REPO_ROOT = BACKEND_DIR.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+# Activer la compression GZIP même en mode test (pour les tests de compression)
+os.environ["CAHIER_FORCE_GZIP"] = "true"
+
 # ---------------------------------------------------------------------------
 # 2. Environment setup — MUST happen before any ``backend.app.*`` import so
 #    that ``Settings`` reads the temporary paths.
@@ -36,7 +39,12 @@ os.environ["CAHIER_PHOTOS_DIR"] = os.path.join(_TMP_ROOT, "photos")
 os.environ["CAHIER_STORAGE_DIR"] = os.path.join(_TMP_ROOT, "storage")
 os.environ["CAHIER_PII_ENCRYPTION_KEY"] = Fernet.generate_key().decode("utf-8")
 os.environ["CAHIER_SERVER_URL"] = ""
-os.environ["CAHIER_DEBUG"] = "false"
+# Mode debug : nécessaire pour l'endpoint de test /_echo (404 hors debug).
+os.environ["CAHIER_DEBUG"] = "true"
+# Token Bearer exigé par AuthMiddleware sur /api/* (TÂCHE 5)
+os.environ["CAHIER_AUTH_TOKEN"] = "test-token"
+# Activer la compression GZIP même en mode test (pour les tests de compression)
+os.environ["CAHIER_FORCE_GZIP"] = "true"
 
 import pytest  # noqa: E402
 
@@ -192,6 +200,7 @@ def client(in_memory_db, pii_encryptor):
         CreditService,
         CustomerService,
         PaymentService,
+        TransactionService,
     )
     from backend.app.infrastructure.database.repositories import (
         SQLiteCreditRepository,
@@ -205,6 +214,7 @@ def client(in_memory_db, pii_encryptor):
     from backend.app.presentation.api.customer_api import set_customer_service
     from backend.app.presentation.api.payment_api import set_payment_service
     from backend.app.presentation.api.sync_api import set_sync_service
+    from backend.app.presentation.api.transaction_api import set_transaction_service
 
     customer_repo = SQLiteCustomerRepository(in_memory_db, pii_encryptor)
     credit_repo = SQLiteCreditRepository(in_memory_db)
@@ -222,14 +232,36 @@ def client(in_memory_db, pii_encryptor):
     )
 
     set_customer_service(CustomerService(customer_repo))
-    set_credit_service(CreditService(credit_repo, customer_repo))
+    # Miroir du câblage production (main.py) : le journal reçoit les crédits.
+    set_credit_service(CreditService(credit_repo, customer_repo, transaction_repo))
     set_payment_service(
         PaymentService(payment_repo, credit_repo, customer_repo, transaction_repo)
     )
     set_sync_service(sync_service)
+    # Le service transactions doit pointer sur la MÊME base en mémoire
+    # (sinon /api/transactions lit la base fichier définie au démarrage).
+    set_transaction_service(TransactionService(transaction_repo))
     # /health reads this module-level global.
     main_module.sync_service = sync_service
 
+    with TestClient(
+        main_module.app,
+        headers={"Authorization": "Bearer test-token"},
+    ) as c:
+        yield c
+
+
+@pytest.fixture
+def noauth_client(in_memory_db, pii_encryptor):
+    """TestClient SANS header Authorization par défaut (pour tester le 401).
+
+    Réutilise le même wiring que ``client`` : les services sont déjà liés.
+    """
+    from fastapi.testclient import TestClient
+
+    import backend.app.main as main_module
+
     with TestClient(main_module.app) as c:
         yield c
+
 

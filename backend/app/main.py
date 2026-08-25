@@ -44,7 +44,7 @@ from backend.app.presentation.api.credit_api import set_credit_service
 from backend.app.presentation.api.payment_api import set_payment_service
 from backend.app.presentation.api.sync_api import set_sync_service
 from backend.app.presentation.api.transaction_api import set_transaction_service
-from backend.app.presentation.middleware import setup_middleware
+from backend.app.presentation.middleware import setup_middleware, AuthMiddleware
 
 # Configuration du logging
 setup_logging()
@@ -83,8 +83,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Middleware (CORS, logging)
+# Middleware (CORS, logging, auth)
 setup_middleware(app)
+app.add_middleware(AuthMiddleware)
 
 # --- Dependency Injection ---
 
