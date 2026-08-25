@@ -43,26 +43,26 @@ class _CustomersScreenState extends State<CustomersScreen> {
             children: [
               TextField(
                 controller: _nameController,
-                decoration: modernInputDecoration(context, label: 'Nom', prefixIcon: Icons.person),
+                decoration: modernInputDecoration('Nom', icon: Icons.person),
                 textInputAction: TextInputAction.next,
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _phoneController,
-                decoration: modernInputDecoration(context, label: 'Téléphone', prefixIcon: Icons.phone),
+                decoration: modernInputDecoration('Téléphone', icon: Icons.phone),
                 keyboardType: TextInputType.phone,
                 textInputAction: TextInputAction.next,
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _addressController,
-                decoration: modernInputDecoration(context, label: 'Adresse', prefixIcon: Icons.place),
+                decoration: modernInputDecoration('Adresse', icon: Icons.place),
                 textInputAction: TextInputAction.next,
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _notesController,
-                decoration: modernInputDecoration(context, label: 'Notes'),
+                decoration: modernInputDecoration('Notes'),
                 maxLines: 3,
               ),
             ],

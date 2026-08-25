@@ -28,7 +28,12 @@ class AppColors {
   static const Color onSurface = Color(0xFF0F172A);
   static const Color onSurfaceVariant = Color(0xFF64748B);
 
-  /// Thème clair Ecahier — moderne, épuré, Material 3.
+  /// Rayons d'arrondi (cohérence visuelle des cartes et boutons).
+  static const double borderRadius = 16;
+  static const double buttonRadius = 12;
+}
+
+/// Thème clair Ecahier — moderne, épuré, Material 3.
 class AppTheme {
   static ThemeData get light => ThemeData(
         useMaterial3: true,
@@ -77,7 +82,6 @@ class AppTheme {
           backgroundColor: Colors.transparent,
           foregroundColor: AppColors.onSurface,
           centerTitle: false,
-          scrolledUnderBackgroundColor: Colors.transparent,
           elevation: 0,
           titleTextStyle: TextStyle(
             fontSize: 20,
@@ -113,7 +117,7 @@ class AppTheme {
         ),
 
         /// --- Cartes ---
-        cardTheme: CardThemeData(
+        cardTheme: CardTheme(
           elevation: 0,
           shape: RoundedRectangleBorder(
               borderRadius:

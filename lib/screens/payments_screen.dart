@@ -138,7 +138,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                       ?.copyWith(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 16),
-                FutureBuilder(
+                FutureBuilder<List<List<Object>>>(
                   future: Future.wait([_futurePayments, _futureCustomers]),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState ==
@@ -146,7 +146,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                       return const Center(
                           child: CircularProgressIndicator());
                     }
-                    final payments = snapshot.data?[0] ?? [];
+                    final payments = (snapshot.data?[0] ?? <Payment>[]).cast<Payment>();
                     final total = payments
                         .fold<double>(0, (s, p) => s + p.amount);
                     return Text(
@@ -162,7 +162,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
             ),
           ),
           Expanded(
-            child: FutureBuilder(
+            child: FutureBuilder<List<List<Object>>>(
               future: Future.wait([_futurePayments, _futureCustomers]),
               builder: (context, snapshot) {
                 if (snapshot.connectionState ==
@@ -170,8 +170,8 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                   return const Center(
                       child: CircularProgressIndicator());
                 }
-                final payments = snapshot.data?[0] ?? [];
-                final customers = snapshot.data?[1] ?? [];
+                final payments = (snapshot.data?[0] ?? <Payment>[]).cast<Payment>();
+                final customers = (snapshot.data?[1] ?? <Customer>[]).cast<Customer>();
                 if (payments.isEmpty) {
                   return const EmptyState(
                     icon: Icons.payments,

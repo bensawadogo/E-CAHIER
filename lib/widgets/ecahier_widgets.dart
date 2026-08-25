@@ -9,6 +9,35 @@ import '../theme/app_theme.dart';
 // Utilitaires de formatage
 // ---------------------------------------------------------------------------
 
+/// Décoration d'entrée standard "moderne et épuré" (champs de formulaire).
+/// Utilisée par les écrans clients, crédits et paiements.
+InputDecoration modernInputDecoration(
+  String label, {
+  String? hint,
+  IconData? icon,
+}) {
+  return InputDecoration(
+    labelText: label,
+    hintText: hint,
+    prefixIcon: icon != null ? Icon(icon, size: 20) : null,
+    filled: true,
+    fillColor: AppColors.surfaceContainerLow,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(AppColors.buttonRadius),
+      borderSide: BorderSide.none,
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(AppColors.buttonRadius),
+      borderSide: const BorderSide(color: AppColors.surfaceContainerHigh),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(AppColors.buttonRadius),
+      borderSide: const BorderSide(color: AppColors.primary, width: 2),
+    ),
+  );
+}
+
 /// Formate un montant en FCFA avec séparateurs de milliers.
 String formatCurrency(num amount) {
   final s = amount.toInt().toString();

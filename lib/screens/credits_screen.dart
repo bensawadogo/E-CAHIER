@@ -66,7 +66,7 @@ class _CreditsScreenState extends State<CreditsScreen> {
             const SizedBox(height: 12),
             TextField(
               controller: amountController,
-              decoration: modernInputDecoration(context, label: 'Montant', prefixIcon: Icons.money),
+              decoration: modernInputDecoration('Montant', icon: Icons.money),
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
             ),
           ],
@@ -111,14 +111,13 @@ class _CreditsScreenState extends State<CreditsScreen> {
                       ?.copyWith(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 16),
-                FutureBuilder(
+                FutureBuilder<List<List<Object>>>(
                   future: Future.wait([_futureCredits, _futureCustomers]),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
                       return const Center(child: CircularProgressIndicator());
                     }
-                    final credits = snapshot.data?[0] ?? [];
-                    final customers = snapshot.data?[1] ?? [];
+                    final credits = (snapshot.data?[0] ?? <Credit>[]).cast<Credit>();
                     final totalActive = credits
                         .where((c) => c.status != 'paid')
                         .fold<double>(0, (s, c) => s + c.amount);
@@ -135,14 +134,14 @@ class _CreditsScreenState extends State<CreditsScreen> {
             ),
           ),
           Expanded(
-            child: FutureBuilder(
+            child: FutureBuilder<List<List<Object>>>(
               future: Future.wait([_futureCredits, _futureCustomers]),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                final credits = snapshot.data?[0] ?? [];
-                final customers = snapshot.data?[1] ?? [];
+                final credits = (snapshot.data?[0] ?? <Credit>[]).cast<Credit>();
+                final customers = (snapshot.data?[1] ?? <Customer>[]).cast<Customer>();
                 if (credits.isEmpty) {
                   return const EmptyState(
                     icon: Icons.credit_card,

@@ -65,9 +65,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
             ),
             const SizedBox(height: 24),
-
-            FutureBuilder(
-              future: Future.wait([
+            FutureBuilder<List<List<Object>>>(
+
+              future: Future.wait([
                 _futureCustomers,
                 _futureCredits,
                 _futurePayments
@@ -76,9 +76,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                final customers = snapshot.data?[0] ?? [];
-                final credits = snapshot.data?[1] ?? [];
-                final payments = snapshot.data?[2] ?? [];
+                final customers = (snapshot.data?[0] ?? <Customer>[]).cast<Customer>();
+                final credits = (snapshot.data?[1] ?? <Credit>[]).cast<Credit>();
+                final payments = (snapshot.data?[2] ?? <Payment>[]).cast<Payment>();
                 final overdue = _overdueCount(credits);
 
                 return GridView.count(
@@ -181,14 +181,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
             SectionHeader(
                 title: 'Crédits en retard',
                 icon: Icons.warning_amber_outlined),
-            FutureBuilder(
+            FutureBuilder<List<List<Object>>>(
               future: Future.wait([_futureCredits, _futureCustomers]),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                final credits = snapshot.data?[0] ?? [];
-                final customers = snapshot.data?[1] ?? [];
+                final credits = (snapshot.data?[0] ?? <Credit>[]).cast<Credit>();
+                final customers = (snapshot.data?[1] ?? <Customer>[]).cast<Customer>();
                 final now = DateTime.now();
                 final overdueCredits = credits
                     .where((c) =>

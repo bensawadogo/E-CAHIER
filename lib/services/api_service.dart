@@ -6,19 +6,21 @@ import '../models/credit.dart';
 import '../models/payment.dart';
 
 // Production : lancer avec --dart-define=CAHIER_API_BASE_URL=https://mon-serveur/api
-const String kApiBaseUrl =
-    String.fromEnvironment('CAHIER_API_BASE_URL', defaultValue: 'http://10.0.2.2:8000/api');
+const String _envApiBaseUrl = String.fromEnvironment('CAHIER_API_BASE_URL');
 
 class ApiService {
-  /// URL de base de l'API. En Web (Flutter build web), on utilise l'origine du
-  /// document courant pour éviter les problèmes CORS et fonctionner quel que
-  /// soit l'hôte/port. En mobile/emulateur, on garde 10.0.2.2.
+  /// URL de base de l'API. En Web (Flutter build web), si une URL explicite
+  /// est fournie au build (--dart-define), elle est prioritaire ; sinon on
+  /// utilise l'origine du document courant pour éviter les problèmes CORS.
   static String get baseUrl {
+    if (_envApiBaseUrl.isNotEmpty) {
+      return _envApiBaseUrl;
+    }
     if (kIsWeb) {
       final origin = Uri.base.origin; // ex: http://localhost:8000
       return '$origin/api';
     }
-    return kApiBaseUrl;
+    return 'http://10.0.2.2:8000/api';
   }
 
   Future<List<Customer>> getCustomers() async {

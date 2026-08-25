@@ -9,6 +9,20 @@
 # packages, and plugins designed to encourage good coding practices.
 include: package:flutter_lints/flutter.yaml
 
+# Dossiers hors projet (variants non retenus, artefacts, outil tiers) —
+# exclus de l'analyse pour des performances acceptables.
+analyzer:
+  exclude:
+    - build/**
+    - frontend/**
+    - cahier_boutique_flutter/**
+    - android/**
+    - ios/**
+    - desktop-tauri/**
+    - graphify/**
+    - flutter/**
+    - web/build/**
+
 linter:
   # The lint rules applied to this project can be customized in the
   # section below to disable rules from the `package:flutter_lints/flutter.yaml`
