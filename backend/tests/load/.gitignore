@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+# Artefacts Locust (rapports / CSV générés à la volée)
+results/*
+!results/.gitkeep
