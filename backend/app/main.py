@@ -144,6 +144,28 @@ def health_check():
     }
 
 
+@app.get("/status/commits")
+def status_commits(limit: int = 20):
+    """Endpoint pour le suivi client : renvoie les N derniers commits git."""
+    import subprocess
+    try:
+        repo_root = os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))))
+        result = subprocess.run(
+            ["git", "--no-pager", "log", f"-{limit}", "--pretty=format:%H|%s|%ad",
+             "--date=short"],
+            capture_output=True, text=True, cwd=repo_root, timeout=5,
+        )
+        commits = []
+        for line in result.stdout.strip().splitlines():
+            parts = line.split("|", 2)
+            if len(parts) == 3:
+                commits.append({"hash": parts[0], "message": parts[1], "date": parts[2]})
+        return commits
+    except Exception:
+        return []
+
+
 @app.get("/")
 def root():
     """Endpoint racine — informations sur l'API."""

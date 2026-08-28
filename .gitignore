@@ -109,3 +109,7 @@ htmlcov/
 /_test.txt
 sqlite3.Connection
 -p
+
+# Tunnel public (cloudflared est un binaire local, jamais versionné)
+cloudflared.exe
+cloudflared.log
