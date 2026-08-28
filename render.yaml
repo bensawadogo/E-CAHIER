@@ -1,0 +1,43 @@
+# Ecahier — Blueprint de déploiement de l'API sur Render
+# Déclare la totalité du service (infra-as-code). À adapter selon votre compte.
+# Documentation : https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: ecahier-api
+    runtime: docker
+    repo: https://github.com/VOTRE_COMPTE/VOTRE_REPO   # ← à remplacer
+    plan: free
+    region: frankfurt            # Le plus proche pour le Burkina Faso (latence basse)
+    dockerContext: .
+    dockerfilePath: backend/Dockerfile
+    healthCheckPath: /health
+    numInstances: 1
+
+    # --- Variables d'environnement ---
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: CAHIER_DEBUG
+        value: "false"
+      # Chemin de la base SQLite : DOIT pointer vers /data (disque persistant)
+      - key: CAHIER_SQLITE_PATH
+        value: /data/cahier_boutique.db
+      - key: CAHIER_SYNC_QUEUE_PATH
+        value: /data/sync_queue.json
+      - key: CAHIER_PHOTOS_DIR
+        value: /data/photos
+      - key: CAHIER_STORAGE_DIR
+        value: /data/storage
+      # Secret : à configurer dans le dashboard Render (jamais en dur ici)
+      - key: CAHIER_PII_ENCRYPTION_KEY
+        sync: false
+      # Sécurité : vide = auth désactivée (à activer pour une vraie prod)
+      - key: CAHIER_AUTH_TOKEN
+        sync: false
+
+    # --- Disque persistant : où vivent la base SQLite et les photos ---
+    disk:
+      name: ecahier-data
+      mountPath: /data
+      sizeGB: 1

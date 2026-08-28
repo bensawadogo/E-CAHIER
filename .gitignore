@@ -71,6 +71,9 @@ download_flutter.bat
 
 # Builds et caches locaux
 build/
+# On autorise UNIQUEMENT le build web Flutter (déployé sur Vercel)
+!build/web/**
+!build/web
 android/.gradle/
 ios/Pods/
 web/build/
