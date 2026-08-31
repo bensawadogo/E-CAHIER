@@ -3,6 +3,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import '../theme/app_icons.dart';
 import '../theme/app_theme.dart';
 
 // ---------------------------------------------------------------------------
@@ -81,17 +82,17 @@ String paymentMethodLabel(String method) {
   }
 }
 
-/// Icône correspondant à la méthode de paiement.
+/// Icône correspondant à la méthode de paiement (jeux d'icônes réels).
 IconData paymentMethodIcon(String method) {
   switch (method) {
     case 'cash':
-      return Icons.payments_outlined;
+      return AppIcons.cash;
     case 'mobile_money':
-      return Icons.phone_iphone;
+      return AppIcons.mobileMoney;
     case 'bank_transfer':
-      return Icons.account_balance;
+      return AppIcons.bankTransfer;
     default:
-      return Icons.payment;
+      return AppIcons.other;
   }
 }
 

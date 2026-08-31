@@ -3,6 +3,7 @@ import '../services/api_service.dart';
 import '../models/index.dart';
 import '../widgets/ecahier_widgets.dart';
 import '../theme/app_theme.dart';
+import '../theme/app_icons.dart';
 
 class CustomersScreen extends StatefulWidget {
   const CustomersScreen({super.key});
@@ -43,20 +44,20 @@ class _CustomersScreenState extends State<CustomersScreen> {
             children: [
               TextField(
                 controller: _nameController,
-                decoration: modernInputDecoration('Nom', icon: Icons.person),
+                decoration: modernInputDecoration('Nom', icon: AppIcons.user),
                 textInputAction: TextInputAction.next,
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _phoneController,
-                decoration: modernInputDecoration('Téléphone', icon: Icons.phone),
+                decoration: modernInputDecoration('Téléphone', icon: AppIcons.phone),
                 keyboardType: TextInputType.phone,
                 textInputAction: TextInputAction.next,
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: _addressController,
-                decoration: modernInputDecoration('Adresse', icon: Icons.place),
+                decoration: modernInputDecoration('Adresse', icon: AppIcons.place),
                 textInputAction: TextInputAction.next,
               ),
               const SizedBox(height: 12),
@@ -115,7 +116,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
                   controller: _searchController,
                   decoration: InputDecoration(
                     hintText: 'Rechercher un client...',
-                    prefixIcon: const Icon(Icons.search),
+                    prefixIcon: const Icon(AppIcons.search),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(AppColors.buttonRadius),
                       borderSide: BorderSide.none,
@@ -143,7 +144,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
                     .toList();
                 if (filtered.isEmpty) {
                   return const EmptyState(
-                    icon: Icons.person_search,
+                    icon: AppIcons.search,
                     message: 'Aucun client correspondant.',
                   );
                 }
@@ -163,7 +164,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _showAddDialog,
-        child: const Icon(Icons.add),
+        child: const Icon(AppIcons.add),
       ),
     );
   }
@@ -188,7 +189,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
         subtitle: Text(customer.phone ?? '—',
             style: TextStyle(color: colors.onSurfaceVariant)),
         trailing: customer.isActive == false
-            ? const Icon(Icons.pause, size: 16, color: Colors.grey)
+            ? const Icon(AppIcons.pause, size: 16, color: Colors.grey)
             : null,
         onTap: () => _showCustomerDetail(context, customer),
       ),
@@ -219,10 +220,10 @@ class _CustomersScreenState extends State<CustomersScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (customer.phone != null && customer.phone!.isNotEmpty)
-              _infoRow(Icons.phone, customer.phone!),
+              _infoRow(AppIcons.phone, customer.phone!),
             if (customer.address != null && customer.address!.isNotEmpty)
-              _infoRow(Icons.place, customer.address!),
-            _infoRow(Icons.calendar_today,
+              _infoRow(AppIcons.place, customer.address!),
+            _infoRow(AppIcons.calendar,
                 customer.createdAt.toLocal().toString().split(' ')[0]),
           ],
         ),

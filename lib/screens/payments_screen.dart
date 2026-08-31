@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../models/index.dart';
 import '../widgets/ecahier_widgets.dart';
+import '../theme/app_icons.dart';
 
 class PaymentsScreen extends StatefulWidget {
   const PaymentsScreen({super.key});
@@ -68,7 +69,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
               controller: amountController,
               decoration: InputDecoration(
                 labelText: 'Montant',
-                prefixIcon: const Icon(Icons.money),
+                prefixIcon: const Icon(AppIcons.money),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
                   borderSide: BorderSide.none,
@@ -174,7 +175,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                 final customers = (snapshot.data?[1] ?? <Customer>[]).cast<Customer>();
                 if (payments.isEmpty) {
                   return const EmptyState(
-                    icon: Icons.payments,
+                    icon: AppIcons.payments,
                     message: 'Aucun paiement enregistré.',
                   );
                 }
@@ -201,7 +202,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _showAddDialog,
-        child: const Icon(Icons.add),
+        child: const Icon(AppIcons.add),
       ),
     );
   }
@@ -266,11 +267,11 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _infoRow(Icons.money,
+            _infoRow(AppIcons.money,
                 'Montant: +${formatCurrency(payment.amount)}'),
-            _infoRow(Icons.payment,
+            _infoRow(AppIcons.other,
                 'Méthode: ${paymentMethodLabel(payment.method)}'),
-            _infoRow(Icons.calendar_today,
+            _infoRow(AppIcons.calendar,
                 'Date: ${payment.createdAt.toLocal().toString().split(' ')[0]}'),
           ],
         ),

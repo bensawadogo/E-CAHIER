@@ -3,6 +3,7 @@ import '../services/api_service.dart';
 import '../models/index.dart';
 import '../widgets/ecahier_widgets.dart';
 import '../theme/app_theme.dart';
+import '../theme/app_icons.dart';
 
 class CreditsScreen extends StatefulWidget {
   const CreditsScreen({super.key});
@@ -66,7 +67,7 @@ class _CreditsScreenState extends State<CreditsScreen> {
             const SizedBox(height: 12),
             TextField(
               controller: amountController,
-              decoration: modernInputDecoration('Montant', icon: Icons.money),
+              decoration: modernInputDecoration('Montant', icon: AppIcons.money),
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
             ),
           ],
@@ -144,7 +145,7 @@ class _CreditsScreenState extends State<CreditsScreen> {
                 final customers = (snapshot.data?[1] ?? <Customer>[]).cast<Customer>();
                 if (credits.isEmpty) {
                   return const EmptyState(
-                    icon: Icons.credit_card,
+                    icon: AppIcons.credits,
                     message: 'Aucun crédit enregistré.',
                   );
                 }
@@ -168,7 +169,7 @@ class _CreditsScreenState extends State<CreditsScreen> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _showAddDialog,
-        child: const Icon(Icons.add),
+        child: const Icon(AppIcons.add),
       ),
     );
   }
@@ -236,12 +237,12 @@ class _CreditsScreenState extends State<CreditsScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _infoRow(Icons.money,
+            _infoRow(AppIcons.money,
                 'Montant: ${formatCurrency(credit.amount)}'),
             if (credit.dueDate != null)
-              _infoRow(Icons.calendar_today,
+              _infoRow(AppIcons.calendar,
                   'Échéance: ${credit.dueDate!.toLocal().toString().split(' ')[0]}'),
-            _infoRow(Icons.info,
+            _infoRow(AppIcons.info,
                 'Statut: ${creditStatusLabel(credit.status)}'),
           ],
         ),

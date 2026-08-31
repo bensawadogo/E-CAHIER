@@ -5,6 +5,7 @@ import 'screens/customers_screen.dart';
 import 'screens/credits_screen.dart';
 import 'screens/payments_screen.dart';
 import 'screens/sync_screen.dart';
+import 'theme/app_icons.dart';
 import 'theme/app_theme.dart';
 
 void main() {
@@ -54,28 +55,23 @@ class _MainScreenState extends State<MainScreen> {
 
   static const List<NavigationDestination> _destinations = [
     NavigationDestination(
-      icon: Icon(Icons.dashboard_outlined),
-      selectedIcon: Icon(Icons.dashboard),
+      icon: Icon(AppIcons.dashboard),
       label: 'Tableau de bord',
     ),
     NavigationDestination(
-      icon: Icon(Icons.person_outline),
-      selectedIcon: Icon(Icons.person),
+      icon: Icon(AppIcons.customers),
       label: 'Clients',
     ),
     NavigationDestination(
-      icon: Icon(Icons.credit_card_outlined),
-      selectedIcon: Icon(Icons.credit_card),
+      icon: Icon(AppIcons.credits),
       label: 'Crédits',
     ),
     NavigationDestination(
-      icon: Icon(Icons.payments_outlined),
-      selectedIcon: Icon(Icons.payments),
+      icon: Icon(AppIcons.payments),
       label: 'Paiements',
     ),
     NavigationDestination(
-      icon: Icon(Icons.sync_outlined),
-      selectedIcon: Icon(Icons.sync),
+      icon: Icon(AppIcons.sync),
       label: 'Sync',
     ),
   ];

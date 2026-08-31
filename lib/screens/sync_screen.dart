@@ -3,6 +3,7 @@ import '../services/api_service.dart';
 import '../models/index.dart';
 import '../widgets/ecahier_widgets.dart';
 import '../theme/app_theme.dart';
+import '../theme/app_icons.dart';
 
 class SyncScreen extends StatefulWidget {
   const SyncScreen({super.key});
@@ -138,7 +139,7 @@ class _SyncScreenState extends State<SyncScreen> {
                       )
                     : FilledButton.icon(
                         onPressed: _syncNow,
-                        icon: const Icon(Icons.sync_outlined),
+                        icon: const Icon(AppIcons.sync),
                         label: const Text('Synchroniser maintenant'),
                       ),
               ),
