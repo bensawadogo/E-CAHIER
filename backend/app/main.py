@@ -168,7 +168,11 @@ def status_commits(limit: int = 20):
 
 @app.get("/")
 def root():
-    """Endpoint racine — informations sur l'API."""
+    """Endpoint racine — interface web si activée, sinon infos API."""
+    if settings.SERVE_FRONTEND:
+        from fastapi.responses import FileResponse
+        _BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        return FileResponse(os.path.join(_BASE_DIR, "web", "index.html"))
     return {
         "app": settings.APP_NAME,
         "version": settings.APP_VERSION,
@@ -178,11 +182,11 @@ def root():
 
 
 # --- Frontend (optionnel) ---
-# Si CAHIER_SERVE_FRONTEND=true, le frontend statique (frontend/web) est servi à la racine.
+# Si CAHIER_SERVE_FRONTEND=true, le frontend statique (web) est servi à la racine.
 # Important : les routes /api, /health, /docs et / sont enregistrées AVANT le montage pour rester prioritaires.
 if settings.SERVE_FRONTEND:
     _BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    _FRONTEND_DIR = os.path.join(_BASE_DIR, "frontend", "web")
+    _FRONTEND_DIR = os.path.join(_BASE_DIR, "web")
     logger.info("Serving frontend from %s", _FRONTEND_DIR)
     app.mount("/", StaticFiles(directory=_FRONTEND_DIR, html=True), name="frontend")
 
