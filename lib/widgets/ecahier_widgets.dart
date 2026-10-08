@@ -3,6 +3,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../theme/app_icons.dart';
 import '../theme/app_theme.dart';
 
@@ -40,14 +41,10 @@ InputDecoration modernInputDecoration(
 }
 
 /// Formate un montant en FCFA avec séparateurs de milliers.
-String formatCurrency(num amount) {
-  final s = amount.toInt().toString();
-  final buf = StringBuffer();
-  for (int i = 0; i < s.length; i++) {
-    if (i > 0 && (s.length - i) % 3 == 0 && buf.isNotEmpty) buf.write(' ');
-    buf.write(s[i]);
-  }
-  return '${buf} FCFA';
+/// Reçoit les centimes (int) et convertit en unités monétaires.
+String formatCurrency(int centimes) {
+  final fcfa = centimes / 100;
+  return NumberFormat.currencyPattern('fr', 'XOF').format(fcfa);
 }
 
 /// Couleur d'avatar déterministe dérivée du nom.
@@ -317,6 +314,51 @@ class EmptyState extends StatelessWidget {
                   ),
               textAlign: TextAlign.center,
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Message d'état d'erreur moderne avec bouton de réessai.
+class ErrorState extends StatelessWidget {
+  final String message;
+  final VoidCallback? onRetry;
+
+  const ErrorState({
+    super.key,
+    required this.message,
+    this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.error_outline, size: 56, color: colors.error),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.copyWith(color: colors.onSurfaceVariant),
+              textAlign: TextAlign.center,
+            ),
+            if (onRetry != null) ...[
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Réessayer'),
+              ),
+            ],
           ],
         ),
       ),

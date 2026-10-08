@@ -15,7 +15,7 @@ from typing import List, Optional
 from backend.app.domain.entities.customer import Customer
 from backend.app.domain.repositories.customer_repository import CustomerRepository
 from backend.app.infrastructure.database.sqlite_connection import SQLiteConnectionManager
-from backend.app.infrastructure.security.path_sanitizer import PathSanitizer, PathTraversalError
+from backend.app.infrastructure.security.path_sanitizer import PathSanitizer
 from backend.app.infrastructure.security.pii_encryptor import PIIEncryptor
 
 
@@ -25,6 +25,10 @@ PHOTOS_DIR = os.environ.get("CAHIER_PHOTOS_DIR", "data/photos")
 
 class SQLiteCustomerRepository(CustomerRepository):
     """Implémentation concrète du CustomerRepository utilisant SQLite."""
+
+    # Pagination limits to prevent memory issues on low-end devices
+    MAX_PAGE_SIZE = 200
+    DEFAULT_PAGE_SIZE = 50
 
     def __init__(
         self,
@@ -91,6 +95,7 @@ class SQLiteCustomerRepository(CustomerRepository):
     def _create_table(self) -> None:
         """Crée la table 'customers' et ses index si elle n'existe pas."""
         with self.connection_manager.connection() as conn:
+            # Create table with all constraints if not exists
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS customers (
@@ -105,7 +110,8 @@ class SQLiteCustomerRepository(CustomerRepository):
                     is_active INTEGER NOT NULL DEFAULT 1,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
-                    sync_status TEXT NOT NULL DEFAULT 'pending'
+                    sync_status TEXT NOT NULL DEFAULT 'pending',
+                    CHECK(sync_status IN ('pending', 'synced', 'conflict'))
                 )
                 """
             )
@@ -119,6 +125,20 @@ class SQLiteCustomerRepository(CustomerRepository):
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_customers_sync ON customers(sync_status)"
             )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone)"
+            )
+            # Partial unique index on phone (only for non-empty phones) to prevent
+            # duplicate customers with slightly different phone formats, while
+            # allowing multiple customers without a phone number.
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_phone_unique "
+                "ON customers(phone) WHERE phone != ''"
+            )
+            # Schema version tracking for future migrations
+            version = conn.execute("PRAGMA user_version").fetchone()[0]
+            if version < 1:
+                conn.execute("PRAGMA user_version = 1")
 
     @staticmethod
     def _pagination_sql(offset: int, limit: Optional[int]) -> tuple:
@@ -131,10 +151,10 @@ class SQLiteCustomerRepository(CustomerRepository):
     # Opérations CRUD
     # ------------------------------------------------------------------
 
-    def add(self, customer: Customer) -> Customer:
+    def add(self, customer: Customer, conn=None) -> Customer:
         """Ajoute un nouveau client à la base de données."""
         pii = self._encrypt_pii(customer)
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute(
                 """
                 INSERT INTO customers
@@ -153,9 +173,9 @@ class SQLiteCustomerRepository(CustomerRepository):
             )
         return customer
 
-    def get_by_id(self, customer_id: str) -> Optional[Customer]:
+    def get_by_id(self, customer_id: str, conn=None) -> Optional[Customer]:
         """Récupère un client par son ID."""
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute(
                 """
                 SELECT id, name, phone, address, notes, photo_path,
@@ -168,8 +188,11 @@ class SQLiteCustomerRepository(CustomerRepository):
             row = cur.fetchone()
             return self._decrypt_pii(row) if row else None
 
-    def get_all(self, offset: int = 0, limit: Optional[int] = None) -> List[Customer]:
+    def get_all(self, offset: int = 0, limit: Optional[int] = None, conn=None) -> List[Customer]:
         """Récupère tous les clients (paginé)."""
+        # Enforce max page size to prevent memory issues on low-end devices
+        if limit is None or limit > self.MAX_PAGE_SIZE:
+            limit = self.DEFAULT_PAGE_SIZE
         pagination, params = self._pagination_sql(offset, limit)
         sql = (
             "SELECT id, name, phone, address, notes, photo_path, "
@@ -178,12 +201,15 @@ class SQLiteCustomerRepository(CustomerRepository):
             "FROM customers ORDER BY name ASC"
             + pagination
         )
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute(sql, params)
             return [self._decrypt_pii(row) for row in cur.fetchall()]
 
-    def get_active(self, offset: int = 0, limit: Optional[int] = None) -> List[Customer]:
+    def get_active(self, offset: int = 0, limit: Optional[int] = None, conn=None) -> List[Customer]:
         """Récupère les clients actifs uniquement (paginé)."""
+        # Enforce max page size to prevent memory issues on low-end devices
+        if limit is None or limit > self.MAX_PAGE_SIZE:
+            limit = self.DEFAULT_PAGE_SIZE
         pagination, params = self._pagination_sql(offset, limit)
         sql = (
             "SELECT id, name, phone, address, notes, photo_path, "
@@ -192,29 +218,29 @@ class SQLiteCustomerRepository(CustomerRepository):
             "FROM customers WHERE is_active = 1 ORDER BY name ASC"
             + pagination
         )
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute(sql, params)
             return [self._decrypt_pii(row) for row in cur.fetchall()]
 
-    def count_all(self) -> int:
+    def count_all(self, conn=None) -> int:
         """Retourne le nombre total de clients."""
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute("SELECT COUNT(*) FROM customers")
             return int(cur.fetchone()[0])
 
-    def count_active(self) -> int:
+    def count_active(self, conn=None) -> int:
         """Retourne le nombre total de clients actifs."""
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute("SELECT COUNT(*) FROM customers WHERE is_active = 1")
             return int(cur.fetchone()[0])
 
-    def update(self, customer: Customer) -> Customer:
+    def update(self, customer: Customer, conn=None) -> Customer:
         """Met à jour un client existant."""
         if not customer.id:
             raise ValueError("L'ID du client est requis pour la mise à jour.")
 
         pii = self._encrypt_pii(customer)
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute(
                 """
                 UPDATE customers SET
@@ -235,9 +261,9 @@ class SQLiteCustomerRepository(CustomerRepository):
                 raise ValueError(f"Aucun client trouvé avec l'ID {customer.id}.")
         return customer
 
-    def delete(self, customer_id: str) -> None:
+    def delete(self, customer_id: str, conn=None) -> None:
         """Supprime un client par son ID."""
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute("DELETE FROM customers WHERE id = ?", (customer_id,))
             if cur.rowcount == 0:
                 raise ValueError(f"Aucun client trouvé avec l'ID {customer_id}.")
@@ -247,8 +273,18 @@ class SQLiteCustomerRepository(CustomerRepository):
         query: str,
         offset: int = 0,
         limit: Optional[int] = None,
+        conn=None,
     ) -> List[Customer]:
-        """Recherche des clients par nom (paginée, insensible à la casse)."""
+        """Recherche des clients par nom (paginée, insensible à la casse).
+
+        Utilise une recherche par préfixe (LIKE 'query%') pour pouvoir
+        exploiter l'index idx_customers_name. La recherche par sous-chaîne
+        (LIKE '%query%') ne peut pas utiliser l'index et provoquerait un
+        full table scan inacceptable sur téléphones bas de gamme.
+        """
+        # Enforce max page size to prevent memory issues on low-end devices
+        if limit is None or limit > self.MAX_PAGE_SIZE:
+            limit = self.DEFAULT_PAGE_SIZE
         pagination, params = self._pagination_sql(offset, limit)
         sql = (
             "SELECT id, name, phone, address, notes, photo_path, "
@@ -257,15 +293,15 @@ class SQLiteCustomerRepository(CustomerRepository):
             "FROM customers WHERE name LIKE ? ORDER BY name ASC"
             + pagination
         )
-        with self.connection_manager.cursor() as cur:
-            cur.execute(sql, (f"%{query}%",) + params)
+        with self.connection_manager.cursor(conn) as cur:
+            cur.execute(sql, (f"{query}%",) + params)
             return [self._decrypt_pii(row) for row in cur.fetchall()]
 
     # ------------------------------------------------------------------
     # Validation de photo avec protection path traversal
     # ------------------------------------------------------------------
 
-    def validate_and_save_photo(self, customer_id: str, raw_filename: str) -> str:
+    def validate_and_save_photo(self, customer_id: str, raw_filename: str, conn=None) -> str:
         """
         Valide un nom de fichier photo et retourne le chemin sécurisé.
 

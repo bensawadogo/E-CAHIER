@@ -22,6 +22,8 @@ class SQLiteConnectionManager:
     def __init__(self, db_path: str = "data/ecahier.db"):
         self.db_path = db_path
         self._connection: Optional[sqlite3.Connection] = None
+        self._transaction_depth = 0
+        self._transaction_connection: Optional[sqlite3.Connection] = None
 
     def _connect(self) -> sqlite3.Connection:
         """Ouvre une nouvelle connexion à la base de données SQLite.
@@ -42,6 +44,9 @@ class SQLiteConnectionManager:
         conn.execute("PRAGMA synchronous = FULL;")
         conn.execute("PRAGMA busy_timeout = 5000;")
         conn.execute("PRAGMA foreign_keys = ON;")
+        conn.execute("PRAGMA wal_autocheckpoint = 500;")
+        conn.execute("PRAGMA journal_size_limit = 67108864;")
+        conn.execute("PRAGMA temp_store = MEMORY;")
         # NORMAL pouvait être utilisé sans WAL, mais FULL est requis ici.
         logger.info("Connexion SQLite ouverte: %s", self.db_path)
         return conn
@@ -60,19 +65,30 @@ class SQLiteConnectionManager:
             logger.info("Connexion SQLite fermée: %s", self.db_path)
 
     @contextmanager
-    def cursor(self):
-        """Fournit un curseur via un context manager avec commit/rollback automatique."""
-        conn = self.get_connection()
-        cur = conn.cursor()
-        try:
-            yield cur
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            logger.error("Erreur transaction SQLite, rollback effectué", exc_info=True)
-            raise
-        finally:
-            cur.close()
+    def cursor(self, conn: Optional[sqlite3.Connection] = None):
+        """Fournit un curseur via un context manager avec commit/rollback automatique.
+        
+        Si conn est fourni, l'utilise (pour transactions explicites).
+        Sinon, utilise la connexion par défaut avec auto-commit.
+        """
+        if conn is not None:
+            cur = conn.cursor()
+            try:
+                yield cur
+            finally:
+                cur.close()
+        else:
+            conn = self.get_connection()
+            cur = conn.cursor()
+            try:
+                yield cur
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                logger.error("Erreur transaction SQLite, rollback effectué", exc_info=True)
+                raise
+            finally:
+                cur.close()
 
     @contextmanager
     def connection(self):
@@ -85,3 +101,49 @@ class SQLiteConnectionManager:
             conn.rollback()
             logger.error("Erreur connexion SQLite, rollback effectué", exc_info=True)
             raise
+
+    @contextmanager
+    def transaction(self):
+        """Context manager pour une transaction explicite avec BEGIN IMMEDIATE.
+        
+        Utilise BEGIN IMMEDIATE pour acquérir le verrou d'écriture immédiatement,
+        évitant les deadlocks en cas d'accès concurrent. Les transactions imbriquées
+        sont supportées via un compteur de profondeur (seule la transaction
+        la plus externe fait COMMIT/ROLLBACK réel).
+        
+        Usage:
+            with connection_manager.transaction() as conn:
+                repo1.add(entity, conn=conn)
+                repo2.update(entity, conn=conn)
+        """
+        if self._transaction_depth == 0:
+            # Transaction externe : nouvelle connexion dédiée ou réutilisation
+            if self._transaction_connection is None:
+                self._transaction_connection = self._connect()
+            conn = self._transaction_connection
+            conn.execute("BEGIN IMMEDIATE;")
+        else:
+            # Transaction imbriquée : réutilise la connexion existante
+            conn = self._transaction_connection
+            if conn is None:
+                raise RuntimeError("Transaction connection lost")
+            conn.execute("SAVEPOINT sp_%d;" % self._transaction_depth)
+        
+        self._transaction_depth += 1
+        
+        try:
+            yield conn
+            if self._transaction_depth == 1:
+                conn.commit()
+                logger.debug("Transaction committed")
+        except Exception:
+            if self._transaction_depth == 1:
+                conn.rollback()
+                logger.error("Transaction rolled back", exc_info=True)
+            else:
+                conn.execute("ROLLBACK TO SAVEPOINT sp_%d;" % (self._transaction_depth - 1))
+            raise
+        finally:
+            self._transaction_depth -= 1
+            if self._transaction_depth == 0:
+                self._transaction_connection = None

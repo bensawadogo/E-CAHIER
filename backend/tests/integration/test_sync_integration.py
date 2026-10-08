@@ -138,7 +138,7 @@ class TestSyncSuccess:
 
         result = await service.sync_once()
 
-        assert result == {"synced": 3, "failed": 0, "skipped": 0}
+        assert result == {"synced": 3, "failed": 0, "dead_lettered": 0, "skipped": 0}
         assert queue.is_empty()
         assert [p["data"]["id"] for p in server.push_payloads] == ["c0", "c1", "c2"]
         # Le health check précède les pushes, qui ciblent /api/sync/push
@@ -157,7 +157,7 @@ class TestSyncOffline:
         enqueue_ops(queue, 2)
         result = await service.sync_once()
 
-        assert result == {"synced": 0, "failed": 0, "skipped": 2}
+        assert result == {"synced": 0, "failed": 0, "dead_lettered": 0, "skipped": 2}
         assert server.calls == []
         assert queue.size() == 2
 
@@ -171,6 +171,7 @@ class TestSyncOffline:
         result = await service.sync_once()
 
         assert result["skipped"] == 2
+        assert result["dead_lettered"] == 0
         assert not any(method == "POST" for method, _ in server.calls)
         assert queue.size() == 2
 
@@ -185,12 +186,12 @@ class TestSyncRetries:
         enqueue_ops(queue, 1)
         result = await service.sync_once()
 
-        assert result == {"synced": 1, "failed": 0, "skipped": 0}
+        assert result == {"synced": 1, "failed": 0, "dead_lettered": 0, "skipped": 0}
         posts = [m for m, _ in server.calls if m == "POST"]
         assert len(posts) == 2  # 1 échec + 1 succès
 
-    async def test_persistent_failure_exhausts_retries_and_keeps_operation(self, make_service):
-        """Échec permanent → max_retries POST, échec compté, opération toujours en file."""
+    async def test_persistent_failure_exhausts_retries_and_moves_to_dead_letter(self, make_service):
+        """Échec permanent → max_retries POST, opération déplacée vers dead-letter."""
         service, queue = make_service(max_retries=3)
         server = FakeAiohttpServer(push_script=[500])
         server.install(pytest.MonkeyPatch())
@@ -198,23 +199,23 @@ class TestSyncRetries:
         enqueue_ops(queue, 1)
         result = await service.sync_once()
 
-        assert result == {"synced": 0, "failed": 1, "skipped": 0}
+        assert result == {"synced": 0, "failed": 0, "dead_lettered": 1, "skipped": 0}
         posts = [m for m, _ in server.calls if m == "POST"]
         assert len(posts) == 3
-        assert queue.size() == 1
+        assert queue.size() == 0  # Opération déplacée vers dead-letter
 
-    async def test_stops_on_first_failure_keeps_remaining_operations_fifo(self, make_service):
-        """Op1 OK, op2 en échec → on s'arrête ; op2 et op3 restent en tête de file."""
+    async def test_continues_on_failure_moves_failed_to_dead_letter(self, make_service):
+        """Op1 OK, op2 échoue après tous les retries → op2 dead-letter, op3 synced."""
         service, queue = make_service(max_retries=2)
-        server = FakeAiohttpServer(push_script=[200, 500])
+        # Op1: 200, Op2: 500, 500 (2 échecs = max_retries), Op3: 200
+        server = FakeAiohttpServer(push_script=[200, 500, 500, 200])
         server.install(pytest.MonkeyPatch())
 
         enqueue_ops(queue, 3)
         result = await service.sync_once()
 
-        assert result == {"synced": 1, "failed": 1, "skipped": 0}
-        assert queue.size() == 2
-        assert queue.peek()["data"]["id"] == "c1"
+        assert result == {"synced": 2, "failed": 0, "dead_lettered": 1, "skipped": 0}
+        assert queue.size() == 0  # Tout vidé (2 synced + 1 dead-letter)
 
 
 class TestSyncConcurrencyAndPersistence:
@@ -226,7 +227,7 @@ class TestSyncConcurrencyAndPersistence:
         enqueue_ops(queue, 1)
         result = await service.sync_once()
 
-        assert result == {"synced": 0, "failed": 0, "skipped": 0}
+        assert result == {"synced": 0, "failed": 0, "dead_lettered": 0, "skipped": 0}
         assert queue.size() == 1
 
     async def test_queue_survives_restart_then_syncs(self, make_service, tmp_path):
@@ -251,5 +252,5 @@ class TestSyncConcurrencyAndPersistence:
         server.install(pytest.MonkeyPatch())
         result = await service2.sync_once()
 
-        assert result == {"synced": 2, "failed": 0, "skipped": 0}
+        assert result == {"synced": 2, "failed": 0, "dead_lettered": 0, "skipped": 0}
         assert queue2.is_empty()

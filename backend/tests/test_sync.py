@@ -29,7 +29,12 @@ class TestSyncQueue:
     def test_peek_does_not_remove(self, sync_queue):
         op = {"entity_type": "payment", "operation": "create", "data": {}}
         sync_queue.enqueue(op)
-        assert sync_queue.peek() == op
+        peeked = sync_queue.peek()
+        assert peeked is not None
+        assert peeked["entity_type"] == op["entity_type"]
+        assert peeked["operation"] == op["operation"]
+        assert peeked["data"] == op["data"]
+        assert "idempotency_key" in peeked
         assert sync_queue.size() == 1
 
     def test_get_all_returns_copy(self, sync_queue):
@@ -100,11 +105,11 @@ class TestSyncService:
     def test_enqueue_operation_format(self, sync_service, sync_queue):
         sync_service.enqueue_operation("payment", "update", {"id": "p1"})
         op = sync_queue.peek()
-        assert op == {
-            "entity_type": "payment",
-            "operation": "update",
-            "data": {"id": "p1"},
-        }
+        assert op is not None
+        assert op["entity_type"] == "payment"
+        assert op["operation"] == "update"
+        assert op["data"] == {"id": "p1"}
+        assert "idempotency_key" in op
 
     def test_is_syncing_initial_false(self, sync_service):
         assert sync_service.is_syncing is False
@@ -128,6 +133,7 @@ class TestSyncService:
         result = await sync_service.sync_once()
         assert result["synced"] == 0
         assert result["failed"] == 0
+        assert result["dead_lettered"] == 0
         # Offline mode: all pending are reported as skipped.
         assert result["skipped"] == 1
         # The queue still holds the operation.
@@ -141,7 +147,7 @@ class TestSyncService:
         monkeypatch.setattr(sync_service, "check_connectivity", fake_check)
         sync_service._is_syncing = True  # simulate an in-progress sync
         result = await sync_service.sync_once()
-        assert result == {"synced": 0, "failed": 0, "skipped": 0}
+        assert result == {"synced": 0, "failed": 0, "dead_lettered": 0, "skipped": 0}
 
     @pytest.mark.asyncio
     async def test_sync_once_success_dequeues(self, sync_service, monkeypatch):
@@ -160,10 +166,11 @@ class TestSyncService:
         result = await sync_service.sync_once()
         assert result["synced"] == 2
         assert result["failed"] == 0
+        assert result["dead_lettered"] == 0
         assert sync_service.pending_count == 0
 
     @pytest.mark.asyncio
-    async def test_sync_once_failure_stops(self, sync_service, monkeypatch):
+    async def test_sync_once_failure_moves_to_dead_letter(self, sync_service, monkeypatch):
         async def fake_check():
             return True
 
@@ -177,10 +184,12 @@ class TestSyncService:
         sync_service.enqueue_operation("credit", "create", {"amount": "100"})
 
         result = await sync_service.sync_once()
+        # Both operations should be tried, both fail, both go to dead-letter
         assert result["synced"] == 0
-        assert result["failed"] == 1
-        # First operation stays in the queue because push failed.
-        assert sync_service.pending_count == 2
+        assert result["failed"] == 0
+        assert result["dead_lettered"] == 2
+        # Queue should be empty since both moved to dead-letter
+        assert sync_service.pending_count == 0
 
     @pytest.mark.asyncio
     async def test_push_operation_with_retry_exhausts_retries(

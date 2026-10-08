@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../services/api_service.dart';
+import '../repositories/ecahier_repository.dart';
 import '../models/index.dart';
 import '../widgets/ecahier_widgets.dart';
 import '../theme/app_theme.dart';
@@ -13,6 +13,7 @@ class CustomersScreen extends StatefulWidget {
 }
 
 class _CustomersScreenState extends State<CustomersScreen> {
+  final _repository = EcahierRepository();
   late Future<List<Customer>> _futureCustomers;
   final _searchController = TextEditingController();
 
@@ -23,7 +24,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
   }
 
   void _loadCustomers() {
-    _futureCustomers = ApiService().getCustomers();
+     _futureCustomers = _repository.getCustomers();
   }
 
   void _showAddDialog() {
@@ -82,7 +83,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
                 notes: _notesController.text,
                 createdAt: DateTime.now(),
               );
-              await ApiService().createCustomer(customer);
+               await _repository.createCustomer(customer);
               if (!mounted) return;
               Navigator.pop(context);
               setState(() => _loadCustomers());
@@ -133,6 +134,14 @@ class _CustomersScreenState extends State<CustomersScreen> {
             child: FutureBuilder<List<Customer>>(
               future: _futureCustomers,
               builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return ErrorState(
+                    message: 'Erreur de chargement',
+                    onRetry: () => setState(() {
+                      _loadCustomers();
+                    }),
+                  );
+                }
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }

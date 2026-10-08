@@ -15,6 +15,10 @@ from backend.app.infrastructure.database.sqlite_connection import SQLiteConnecti
 class SQLiteCreditRepository(CreditRepository):
     """Implémentation concrète du CreditRepository utilisant SQLite."""
 
+    # Pagination limits to prevent memory issues on low-end devices
+    MAX_PAGE_SIZE = 200
+    DEFAULT_PAGE_SIZE = 50
+
     def __init__(self, connection_manager: SQLiteConnectionManager):
         self.connection_manager = connection_manager
         self._create_table()
@@ -22,6 +26,7 @@ class SQLiteCreditRepository(CreditRepository):
     def _create_table(self) -> None:
         """Crée la table 'credits' et ses index si elle n'existe pas."""
         with self.connection_manager.connection() as conn:
+            # Create table with all constraints if not exists
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS credits (
@@ -34,7 +39,9 @@ class SQLiteCreditRepository(CreditRepository):
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     sync_status TEXT NOT NULL DEFAULT 'pending',
-                    FOREIGN KEY (customer_id) REFERENCES customers(id)
+                    FOREIGN KEY (customer_id) REFERENCES customers(id),
+                    CHECK(status IN ('pending', 'partial', 'paid', 'cancelled')),
+                    CHECK(sync_status IN ('pending', 'synced', 'conflict'))
                 )
                 """
             )
@@ -42,15 +49,17 @@ class SQLiteCreditRepository(CreditRepository):
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_credits_customer ON credits(customer_id)"
             )
+            # Composite index for overdue query (status, due_date) - SQLite can only use one index per query
             conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_credits_status ON credits(status)"
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_credits_due_date ON credits(due_date)"
+                "CREATE INDEX IF NOT EXISTS idx_credits_status_due_date ON credits(status, due_date)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_credits_sync ON credits(sync_status)"
             )
+            # Schema version tracking for future migrations
+            version = conn.execute("PRAGMA user_version").fetchone()[0]
+            if version < 1:
+                conn.execute("PRAGMA user_version = 1")
 
     @staticmethod
     def _pagination_sql(offset: int, limit: Optional[int]) -> tuple:
@@ -77,9 +86,9 @@ class SQLiteCreditRepository(CreditRepository):
             sync_status=row["sync_status"],
         )
 
-    def add(self, credit: Credit) -> Credit:
+    def add(self, credit: Credit, conn=None) -> Credit:
         """Ajoute un nouveau crédit à la base de données."""
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute(
                 """
                 INSERT INTO credits
@@ -96,9 +105,9 @@ class SQLiteCreditRepository(CreditRepository):
             )
         return credit
 
-    def get_by_id(self, credit_id: str) -> Optional[Credit]:
+    def get_by_id(self, credit_id: str, conn=None) -> Optional[Credit]:
         """Récupère un crédit par son ID."""
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute(
                 """
                 SELECT id, customer_id, amount, description, due_date,
@@ -115,8 +124,12 @@ class SQLiteCreditRepository(CreditRepository):
         customer_id: str,
         offset: int = 0,
         limit: Optional[int] = None,
+        conn=None,
     ) -> List[Credit]:
         """Retourne tous les crédits d'un client (paginé)."""
+        # Enforce max page size to prevent memory issues on low-end devices
+        if limit is None or limit > self.MAX_PAGE_SIZE:
+            limit = self.DEFAULT_PAGE_SIZE
         pagination, params = self._pagination_sql(offset, limit)
         sql = (
             "SELECT id, customer_id, amount, description, due_date, "
@@ -124,12 +137,15 @@ class SQLiteCreditRepository(CreditRepository):
             "FROM credits WHERE customer_id = ? ORDER BY created_at DESC"
             + pagination
         )
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute(sql, (customer_id,) + params)
             return [self._row_to_credit(row) for row in cur.fetchall()]
 
-    def get_all(self, offset: int = 0, limit: Optional[int] = None) -> List[Credit]:
+    def get_all(self, offset: int = 0, limit: Optional[int] = None, conn=None) -> List[Credit]:
         """Récupère tous les crédits (paginé)."""
+        # Enforce max page size to prevent memory issues on low-end devices
+        if limit is None or limit > self.MAX_PAGE_SIZE:
+            limit = self.DEFAULT_PAGE_SIZE
         pagination, params = self._pagination_sql(offset, limit)
         sql = (
             "SELECT id, customer_id, amount, description, due_date, "
@@ -137,7 +153,7 @@ class SQLiteCreditRepository(CreditRepository):
             "FROM credits ORDER BY created_at DESC"
             + pagination
         )
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute(sql, params)
             return [self._row_to_credit(row) for row in cur.fetchall()]
 
@@ -145,8 +161,12 @@ class SQLiteCreditRepository(CreditRepository):
         self,
         offset: int = 0,
         limit: Optional[int] = None,
+        conn=None,
     ) -> List[Credit]:
         """Retourne les crédits non payés (pending ou partial) — paginé."""
+        # Enforce max page size to prevent memory issues on low-end devices
+        if limit is None or limit > self.MAX_PAGE_SIZE:
+            limit = self.DEFAULT_PAGE_SIZE
         pagination, params = self._pagination_sql(offset, limit)
         sql = (
             "SELECT id, customer_id, amount, description, due_date, "
@@ -155,7 +175,7 @@ class SQLiteCreditRepository(CreditRepository):
             "ORDER BY due_date ASC"
             + pagination
         )
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute(sql, params)
             return [self._row_to_credit(row) for row in cur.fetchall()]
 
@@ -163,9 +183,13 @@ class SQLiteCreditRepository(CreditRepository):
         self,
         offset: int = 0,
         limit: Optional[int] = None,
+        conn=None,
     ) -> List[Credit]:
         """Retourne les crédits en retard (échéance dépassée et non payé) — paginé."""
         now = datetime.now(timezone.utc).isoformat()
+        # Enforce max page size to prevent memory issues on low-end devices
+        if limit is None or limit > self.MAX_PAGE_SIZE:
+            limit = self.DEFAULT_PAGE_SIZE
         pagination, params = self._pagination_sql(offset, limit)
         sql = (
             "SELECT id, customer_id, amount, description, due_date, "
@@ -174,28 +198,28 @@ class SQLiteCreditRepository(CreditRepository):
             "ORDER BY due_date ASC"
             + pagination
         )
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute(sql, (now,) + params)
             return [self._row_to_credit(row) for row in cur.fetchall()]
 
-    def count_all(self) -> int:
+    def count_all(self, conn=None) -> int:
         """Retourne le nombre total de crédits."""
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute("SELECT COUNT(*) FROM credits")
             return int(cur.fetchone()[0])
 
-    def count_pending(self) -> int:
+    def count_pending(self, conn=None) -> int:
         """Retourne le nombre de crédits non payés (pending ou partial)."""
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute(
                 "SELECT COUNT(*) FROM credits WHERE status IN ('pending', 'partial')"
             )
             return int(cur.fetchone()[0])
 
-    def count_overdue(self) -> int:
+    def count_overdue(self, conn=None) -> int:
         """Retourne le nombre de crédits en retard (échéance dépassée)."""
         now = datetime.now(timezone.utc).isoformat()
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute(
                 "SELECT COUNT(*) FROM credits "
                 "WHERE status IN ('pending', 'partial') AND due_date < ?",
@@ -203,11 +227,11 @@ class SQLiteCreditRepository(CreditRepository):
             )
             return int(cur.fetchone()[0])
 
-    def update(self, credit: Credit) -> Credit:
+    def update(self, credit: Credit, conn=None) -> Credit:
         """Met à jour un crédit existant."""
         if not credit.id:
             raise ValueError("L'ID du crédit est requis pour la mise à jour.")
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute(
                 """
                 UPDATE credits SET
@@ -225,9 +249,9 @@ class SQLiteCreditRepository(CreditRepository):
                 raise ValueError(f"Aucun crédit trouvé avec l'ID {credit.id}.")
         return credit
 
-    def delete(self, credit_id: str) -> None:
+    def delete(self, credit_id: str, conn=None) -> None:
         """Supprime un crédit par son ID."""
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute("DELETE FROM credits WHERE id = ?", (credit_id,))
             if cur.rowcount == 0:
                 raise ValueError(f"Aucun crédit trouvé avec l'ID {credit_id}.")

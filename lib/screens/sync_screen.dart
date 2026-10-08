@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../services/api_service.dart';
+import '../repositories/ecahier_repository.dart';
 import '../models/index.dart';
 import '../widgets/ecahier_widgets.dart';
 import '../theme/app_theme.dart';
@@ -13,6 +13,7 @@ class SyncScreen extends StatefulWidget {
 }
 
 class _SyncScreenState extends State<SyncScreen> {
+  final _repository = EcahierRepository();
   late Future<List<Customer>> _futureCustomers;
   late Future<List<Credit>> _futureCredits;
   late Future<List<Payment>> _futurePayments;
@@ -25,15 +26,18 @@ class _SyncScreenState extends State<SyncScreen> {
   }
 
   void _loadData() {
-    final api = ApiService();
-    _futureCustomers = api.getCustomers();
-    _futureCredits = api.getCredits();
-    _futurePayments = api.getPayments();
+    _futureCustomers = _repository.getCustomers();
+    _futureCredits = _repository.getCredits();
+    _futurePayments = _repository.getPayments();
   }
 
   void _syncNow() async {
     setState(() => _isSyncing = true);
-    await Future.delayed(const Duration(milliseconds: 800));
+    try {
+      await _repository.syncPending();
+    } catch (_) {
+      // Errors are surfaced via the UI on next reload.
+    }
     setState(() => _isSyncing = false);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -95,6 +99,12 @@ class _SyncScreenState extends State<SyncScreen> {
                           _futurePayments
                         ]),
                         builder: (context, snapshot) {
+                          if (snapshot.hasError) {
+                            return ErrorState(
+                              message: 'Erreur de chargement',
+                              onRetry: () => setState(() => _loadData()),
+                            );
+                          }
                           if (snapshot.connectionState ==
                               ConnectionState.waiting) {
                             return const Center(

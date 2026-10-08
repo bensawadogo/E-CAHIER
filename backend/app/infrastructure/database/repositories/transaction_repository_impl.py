@@ -4,7 +4,6 @@ Adaptateur concret pour le port TransactionRepository.
 Journal des opérations (crédits et paiements) par client.
 """
 
-from collections import namedtuple
 from datetime import datetime
 from decimal import Decimal
 from typing import List, Optional
@@ -24,6 +23,10 @@ _SELECT_SQL = (
 class SQLiteTransactionRepository(TransactionRepository):
     """Implémentation concrète du TransactionRepository utilisant SQLite."""
 
+    # Pagination limits to prevent memory issues on low-end devices
+    MAX_PAGE_SIZE = 200
+    DEFAULT_PAGE_SIZE = 50
+
     def __init__(self, connection_manager: SQLiteConnectionManager):
         self.connection_manager = connection_manager
         self._create_table()
@@ -31,6 +34,7 @@ class SQLiteTransactionRepository(TransactionRepository):
     def _create_table(self) -> None:
         """Crée la table 'transactions' et ses index si elle n'existe pas."""
         with self.connection_manager.connection() as conn:
+            # Create table with all constraints if not exists
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS transactions (
@@ -44,7 +48,9 @@ class SQLiteTransactionRepository(TransactionRepository):
                     description TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL,
                     sync_status TEXT NOT NULL DEFAULT 'pending',
-                    FOREIGN KEY (customer_id) REFERENCES customers(id)
+                    FOREIGN KEY (customer_id) REFERENCES customers(id),
+                    CHECK(type IN ('credit', 'payment', 'adjustment')),
+                    CHECK(sync_status IN ('pending', 'synced', 'conflict'))
                 )
                 """
             )
@@ -61,6 +67,14 @@ class SQLiteTransactionRepository(TransactionRepository):
                 "CREATE INDEX IF NOT EXISTS idx_transactions_sync "
                 "ON transactions(sync_status)"
             )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_transactions_type "
+                "ON transactions(type)"
+            )
+            # Schema version tracking for future migrations
+            version = conn.execute("PRAGMA user_version").fetchone()[0]
+            if version < 1:
+                conn.execute("PRAGMA user_version = 1")
 
     @staticmethod
     def _pagination_sql(offset: int, limit: Optional[int]) -> tuple:
@@ -112,9 +126,9 @@ class SQLiteTransactionRepository(TransactionRepository):
     # Opérations CRUD
     # ------------------------------------------------------------------
 
-    def add(self, transaction: Transaction) -> Transaction:
+    def add(self, transaction: Transaction, conn=None) -> Transaction:
         """Ajoute une nouvelle transaction au journal."""
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute(
                 """
                 INSERT INTO transactions
@@ -126,9 +140,9 @@ class SQLiteTransactionRepository(TransactionRepository):
             )
         return transaction
 
-    def get_by_id(self, transaction_id: str) -> Optional[Transaction]:
+    def get_by_id(self, transaction_id: str, conn=None) -> Optional[Transaction]:
         """Récupère une transaction par son ID."""
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute(f"{_SELECT_SQL} WHERE id = ?", (transaction_id,))
             row = cur.fetchone()
             return self._row_to_transaction(row) if row else None
@@ -138,28 +152,35 @@ class SQLiteTransactionRepository(TransactionRepository):
         customer_id: str,
         offset: int = 0,
         limit: Optional[int] = None,
+        conn=None,
     ) -> List[Transaction]:
         """Retourne l'historique des transactions d'un client (paginé)."""
+        # Enforce max page size to prevent memory issues on low-end devices
+        if limit is None or limit > self.MAX_PAGE_SIZE:
+            limit = self.DEFAULT_PAGE_SIZE
         pagination, params = self._pagination_sql(offset, limit)
         sql = (
             f"{_SELECT_SQL} WHERE customer_id = ? ORDER BY created_at DESC"
             + pagination
         )
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute(sql, (customer_id,) + params)
             return [self._row_to_transaction(row) for row in cur.fetchall()]
 
-    def get_all(self, offset: int = 0, limit: Optional[int] = None) -> List[Transaction]:
+    def get_all(self, offset: int = 0, limit: Optional[int] = None, conn=None) -> List[Transaction]:
         """Retourne la liste de toutes les transactions (paginé)."""
+        # Enforce max page size to prevent memory issues on low-end devices
+        if limit is None or limit > self.MAX_PAGE_SIZE:
+            limit = self.DEFAULT_PAGE_SIZE
         pagination, params = self._pagination_sql(offset, limit)
         sql = f"{_SELECT_SQL} ORDER BY created_at DESC" + pagination
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute(sql, params)
             return [self._row_to_transaction(row) for row in cur.fetchall()]
 
-    def count_all(self) -> int:
+    def count_all(self, conn=None) -> int:
         """Retourne le nombre total de transactions."""
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute("SELECT COUNT(*) FROM transactions")
             return int(cur.fetchone()[0])
 
@@ -167,20 +188,24 @@ class SQLiteTransactionRepository(TransactionRepository):
         self,
         offset: int = 0,
         limit: Optional[int] = None,
+        conn=None,
     ) -> List[Transaction]:
         """Retourne les transactions en attente de synchronisation (paginé)."""
+        # Enforce max page size to prevent memory issues on low-end devices
+        if limit is None or limit > self.MAX_PAGE_SIZE:
+            limit = self.DEFAULT_PAGE_SIZE
         pagination, params = self._pagination_sql(offset, limit)
         sql = (
             f"{_SELECT_SQL} WHERE sync_status = 'pending' ORDER BY created_at ASC"
             + pagination
         )
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute(sql, params)
             return [self._row_to_transaction(row) for row in cur.fetchall()]
 
-    def delete(self, transaction_id: str) -> None:
+    def delete(self, transaction_id: str, conn=None) -> None:
         """Supprime une transaction par son ID."""
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute("DELETE FROM transactions WHERE id = ?", (transaction_id,))
             if cur.rowcount == 0:
                 raise ValueError(

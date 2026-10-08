@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../services/api_service.dart';
+import '../repositories/ecahier_repository.dart';
 import '../models/index.dart';
 import '../widgets/ecahier_widgets.dart';
 import '../theme/app_icons.dart';
@@ -12,6 +12,7 @@ class PaymentsScreen extends StatefulWidget {
 }
 
 class _PaymentsScreenState extends State<PaymentsScreen> {
+  final _repository = EcahierRepository();
   late Future<List<Payment>> _futurePayments;
   late Future<List<Customer>> _futureCustomers;
 
@@ -22,8 +23,8 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
   }
 
   void _loadData() {
-    _futurePayments = ApiService().getPayments();
-    _futureCustomers = ApiService().getCustomers();
+    _futurePayments = _repository.getPayments();
+    _futureCustomers = _repository.getCustomers();
   }
 
   void _showAddDialog() {
@@ -43,6 +44,12 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
             FutureBuilder<List<Customer>>(
               future: _futureCustomers,
               builder: (context, snap) {
+                if (snap.hasError) {
+                  return const Text(
+                    'Impossible de charger les clients',
+                    style: TextStyle(color: Colors.red),
+                  );
+                }
                 final customers = snap.data ?? [];
                 return DropdownButtonFormField<String>(
                   value: customerId,
@@ -103,10 +110,12 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
           FilledButton(
             onPressed: () async {
               if (customerId == null || amountController.text.isEmpty) return;
-              await ApiService().createPayment(Payment(
+              final cents =
+                  (double.parse(amountController.text) * 100).round();
+              await _repository.createPayment(Payment(
                 id: DateTime.now().millisecondsSinceEpoch.toString(),
                 customerId: customerId!,
-                amount: double.parse(amountController.text),
+                amountCentimes: cents,
                 method: method,
                 createdAt: DateTime.now(),
               ));
@@ -142,6 +151,12 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                 FutureBuilder<List<List<Object>>>(
                   future: Future.wait([_futurePayments, _futureCustomers]),
                   builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      return ErrorState(
+                        message: 'Erreur de chargement',
+                        onRetry: () => setState(() => _loadData()),
+                      );
+                    }
                     if (snapshot.connectionState ==
                         ConnectionState.waiting) {
                       return const Center(
@@ -149,7 +164,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                     }
                     final payments = (snapshot.data?[0] ?? <Payment>[]).cast<Payment>();
                     final total = payments
-                        .fold<double>(0, (s, p) => s + p.amount);
+                        .fold<int>(0, (s, p) => s + p.amountCentimes);
                     return Text(
                       'Total perçu : ${formatCurrency(total)}',
                       style: Theme.of(context)
@@ -166,6 +181,12 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
             child: FutureBuilder<List<List<Object>>>(
               future: Future.wait([_futurePayments, _futureCustomers]),
               builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return ErrorState(
+                    message: 'Erreur de chargement',
+                    onRetry: () => setState(() => _loadData()),
+                  );
+                }
                 if (snapshot.connectionState ==
                     ConnectionState.waiting) {
                   return const Center(
@@ -173,6 +194,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                 }
                 final payments = (snapshot.data?[0] ?? <Payment>[]).cast<Payment>();
                 final customers = (snapshot.data?[1] ?? <Customer>[]).cast<Customer>();
+                final customerMap = {for (final c in customers) c.id: c};
                 if (payments.isEmpty) {
                   return const EmptyState(
                     icon: AppIcons.payments,
@@ -186,9 +208,8 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
                   separatorBuilder: (_, __) => const SizedBox(height: 8),
                   itemBuilder: (context, i) {
                     final payment = payments[i];
-                    final customer = customers.firstWhere(
-                        (c) => c.id == payment.customerId,
-                        orElse: () => Customer(
+                    final customer = customerMap[payment.customerId] ??
+                        Customer(
                             id: '',
                             name: 'Inconnu',
                             createdAt: DateTime.now()));
@@ -237,7 +258,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Text(formatCurrency(payment.amount),
+            Text(formatCurrency(payment.amountCentimes),
                 style: TextStyle(
                     color: colors.tertiary,
                     fontWeight: FontWeight.w700)),
@@ -268,7 +289,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _infoRow(AppIcons.money,
-                'Montant: +${formatCurrency(payment.amount)}'),
+                'Montant: +${formatCurrency(payment.amountCentimes)}'),
             _infoRow(AppIcons.other,
                 'Méthode: ${paymentMethodLabel(payment.method)}'),
             _infoRow(AppIcons.calendar,

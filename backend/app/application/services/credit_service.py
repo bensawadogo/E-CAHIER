@@ -16,6 +16,7 @@ from backend.app.application.dto.credit_dto import (
     CreateCreditRequest,
     UpdateCreditRequest,
 )
+from backend.app.infrastructure.database.sqlite_connection import SQLiteConnectionManager
 
 logger = logging.getLogger(__name__)
 
@@ -28,67 +29,79 @@ class CreditService:
         credit_repository: CreditRepository,
         customer_repository: CustomerRepository,
         transaction_repository: Optional[TransactionRepository] = None,
+        connection_manager: Optional[SQLiteConnectionManager] = None,
     ):
         self.credit_repository = credit_repository
         self.customer_repository = customer_repository
         self.transaction_repository = transaction_repository
+        self.connection_manager = connection_manager
 
     def create_credit(self, request: CreateCreditRequest) -> Credit:
-        """Crée un nouveau crédit pour un client."""
-        # Vérifier que le client existe
-        customer = self.customer_repository.get_by_id(request.customer_id)
-        if not customer:
-            raise ValueError(f"Client introuvable: {request.customer_id}")
+        """Crée un nouveau crédit pour un client. Tout se passe dans une transaction atomique."""
+        def _do_create(conn):
+            # Vérifier que le client existe
+            customer = self.customer_repository.get_by_id(request.customer_id, conn=conn)
+            if not customer:
+                raise ValueError(f"Client introuvable: {request.customer_id}")
 
-        # Date d'échéance par défaut : 30 jours
-        due_date = request.due_date or datetime.now(timezone.utc) + timedelta(days=30)
+            # Date d'échéance par défaut : 30 jours
+            due_date = request.due_date or datetime.now(timezone.utc) + timedelta(days=30)
 
-        credit = Credit(
-            customer_id=request.customer_id,
-            amount=request.amount,
-            description=request.description,
-            due_date=due_date,
-        )
-        saved = self.credit_repository.add(credit)
-
-        # Mettre à jour le total_credit du client
-        customer.total_credit += request.amount
-        self.customer_repository.update(customer)
-
-        # Enregistrer la transaction dans le journal (si le repository est fourni)
-        if self.transaction_repository is not None:
-            transaction = Transaction(
+            credit = Credit(
                 customer_id=request.customer_id,
-                credit_id=saved.id,
-                type="credit",
                 amount=request.amount,
-                balance_after=customer.balance,
-                description=request.description or "Crédit octroyé",
+                description=request.description,
+                due_date=due_date,
             )
-            self.transaction_repository.add(transaction)
+            saved = self.credit_repository.add(credit, conn=conn)
 
-        logger.info("Crédit créé: %s pour client %s (montant: %s)", saved.id, request.customer_id, request.amount)
-        return saved
+            # Mettre à jour le total_credit du client
+            customer.total_credit += request.amount
+            self.customer_repository.update(customer, conn=conn)
 
-    def get_credit(self, credit_id: str) -> Optional[Credit]:
+            # Enregistrer la transaction dans le journal (si le repository est fourni)
+            if self.transaction_repository is not None:
+                transaction = Transaction(
+                    customer_id=request.customer_id,
+                    credit_id=saved.id,
+                    type="credit",
+                    amount=request.amount,
+                    balance_after=customer.balance,
+                    description=request.description or "Crédit octroyé",
+                )
+                self.transaction_repository.add(transaction, conn=conn)
+
+            logger.info("Crédit créé: %s pour client %s (montant: %s)", saved.id, request.customer_id, request.amount)
+            return saved
+
+        if self.connection_manager:
+            with self.connection_manager.transaction() as conn:
+                return _do_create(conn)
+        else:
+            # Fallback sans transaction (pour tests avec fake repositories)
+            return _do_create(None)
+
+    def get_credit(self, credit_id: str, conn=None) -> Optional[Credit]:
         """Récupère un crédit par son ID."""
-        return self.credit_repository.get_by_id(credit_id)
+        return self.credit_repository.get_by_id(credit_id, conn=conn)
 
     def get_customer_credits(
         self,
         customer_id: str,
         offset: int = 0,
         limit: Optional[int] = None,
+        conn=None,
     ) -> List[Credit]:
         """Récupère tous les crédits d'un client (paginé)."""
         return self.credit_repository.get_by_customer(
-            customer_id, offset=offset, limit=limit
+            customer_id, offset=offset, limit=limit, conn=conn
         )
 
     def get_all_credits(
         self,
         offset: int = 0,
         limit: Optional[int] = None,
+        conn=None,
     ) -> Tuple[List[Credit], int]:
         """
         Récupère tous les crédits (paginé).
@@ -96,14 +109,15 @@ class CreditService:
         Returns:
             Tuple (liste paginée, total).
         """
-        credits = self.credit_repository.get_all(offset=offset, limit=limit)
-        total = self.credit_repository.count_all()
+        credits = self.credit_repository.get_all(offset=offset, limit=limit, conn=conn)
+        total = self.credit_repository.count_all(conn=conn)
         return credits, total
 
     def get_pending_credits(
         self,
         offset: int = 0,
         limit: Optional[int] = None,
+        conn=None,
     ) -> Tuple[List[Credit], int]:
         """
         Récupère les crédits non payés (paginé).
@@ -111,14 +125,15 @@ class CreditService:
         Returns:
             Tuple (liste paginée, total).
         """
-        credits = self.credit_repository.get_pending(offset=offset, limit=limit)
-        total = self.credit_repository.count_pending()
+        credits = self.credit_repository.get_pending(offset=offset, limit=limit, conn=conn)
+        total = self.credit_repository.count_pending(conn=conn)
         return credits, total
 
     def get_overdue_credits(
         self,
         offset: int = 0,
         limit: Optional[int] = None,
+        conn=None,
     ) -> Tuple[List[Credit], int]:
         """
         Récupère les crédits en retard (paginé).
@@ -126,13 +141,13 @@ class CreditService:
         Returns:
             Tuple (liste paginée, total).
         """
-        credits = self.credit_repository.get_overdue(offset=offset, limit=limit)
-        total = self.credit_repository.count_overdue()
+        credits = self.credit_repository.get_overdue(offset=offset, limit=limit, conn=conn)
+        total = self.credit_repository.count_overdue(conn=conn)
         return credits, total
 
-    def update_credit(self, credit_id: str, request: UpdateCreditRequest) -> Credit:
+    def update_credit(self, credit_id: str, request: UpdateCreditRequest, conn=None) -> Credit:
         """Met à jour un crédit existant."""
-        credit = self.credit_repository.get_by_id(credit_id)
+        credit = self.credit_repository.get_by_id(credit_id, conn=conn)
         if not credit:
             raise ValueError(f"Crédit introuvable: {credit_id}")
 
@@ -145,11 +160,11 @@ class CreditService:
         if request.status is not None:
             credit.status = request.status
 
-        updated = self.credit_repository.update(credit)
+        updated = self.credit_repository.update(credit, conn=conn)
         logger.info("Crédit mis à jour: %s", credit_id)
         return updated
 
-    def delete_credit(self, credit_id: str) -> None:
+    def delete_credit(self, credit_id: str, conn=None) -> None:
         """Supprime un crédit."""
-        self.credit_repository.delete(credit_id)
+        self.credit_repository.delete(credit_id, conn=conn)
         logger.info("Crédit supprimé: %s", credit_id)

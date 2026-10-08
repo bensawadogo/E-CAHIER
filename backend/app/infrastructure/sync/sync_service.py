@@ -7,6 +7,8 @@ Stratégie pour le contexte Burkina Faso :
   - Sync différée : les opérations sont poussées vers le serveur quand le réseau est disponible
   - Retry avec backoff exponentiel : en cas d'échec, retry avec délai croissant
   - Détection de connectivité : vérifie la disponibilité du serveur avant sync
+  - Idempotence : chaque opération porte un UUID4, le serveur déduplique sur cette clé
+  - Dead-letter : les opérations échouées après max_retries sont isolées pour analyse
 """
 
 import asyncio
@@ -44,7 +46,7 @@ class SyncService:
         """Nombre d'opérations en attente de synchronisation."""
         return self.sync_queue.size()
 
-    def enqueue_operation(self, entity_type: str, operation: str, data: Dict[str, Any]) -> None:
+    def enqueue_operation(self, entity_type: str, operation: str, data: Dict[str, Any]) -> str:
         """
         Ajoute une opération à la file de synchronisation.
 
@@ -52,8 +54,11 @@ class SyncService:
             entity_type: Type d'entité (customer, credit, payment, transaction).
             operation: Type d'opération (create, update, delete).
             data: Données de l'entité à synchroniser.
+
+        Returns:
+            str: La clé d'idempotence (UUID4) assignée à l'opération.
         """
-        self.sync_queue.enqueue({
+        return self.sync_queue.enqueue({
             "entity_type": entity_type,
             "operation": operation,
             "data": data,
@@ -78,23 +83,25 @@ class SyncService:
     async def sync_once(self) -> Dict[str, int]:
         """
         Tente de synchroniser toutes les opérations en file une seule fois.
+        Les opérations échouées sont déplacées vers dead-letter (ne bloquent pas la file).
 
         Returns:
-            Dict avec les compteurs: synced, failed, skipped.
+            Dict avec les compteurs: synced, failed, dead_lettered, skipped.
         """
         if self._is_syncing:
             logger.info("Sync déjà en cours — ignoré.")
-            return {"synced": 0, "failed": 0, "skipped": 0}
+            return {"synced": 0, "failed": 0, "dead_lettered": 0, "skipped": 0}
 
         self._is_syncing = True
         synced = 0
         failed = 0
+        dead_lettered = 0
         skipped = 0
 
         try:
             if not await self.check_connectivity():
                 logger.info("Pas de connexion — sync reportée.")
-                return {"synced": 0, "failed": 0, "skipped": self.sync_queue.size()}
+                return {"synced": 0, "failed": 0, "dead_lettered": 0, "skipped": self.sync_queue.size()}
 
             while not self.sync_queue.is_empty():
                 operation = self.sync_queue.peek()
@@ -106,21 +113,31 @@ class SyncService:
                     self.sync_queue.dequeue()
                     synced += 1
                 else:
-                    failed += 1
-                    break  # Arrêter sur échec pour éviter de tout perdre
+                    # Échec après tous les retries -> dead-letter, on continue
+                    self.sync_queue.move_to_dead_letter(operation)
+                    dead_lettered += 1
+                    logger.warning(
+                        "Opération %s déplacée vers dead-letter après %d échecs",
+                        operation.get("idempotency_key"),
+                        self.max_retries,
+                    )
+                    # On NE break PAS : on continue avec l'opération suivante
 
         finally:
             self._is_syncing = False
 
-        logger.info("Sync terminée: %d réussies, %d échouées, %d ignorées", synced, failed, skipped)
-        return {"synced": synced, "failed": failed, "skipped": skipped}
+        logger.info(
+            "Sync terminée: %d réussies, %d échouées, %d en dead-letter, %d ignorées",
+            synced, failed, dead_lettered, skipped,
+        )
+        return {"synced": synced, "failed": failed, "dead_lettered": dead_lettered, "skipped": skipped}
 
     async def _push_operation_with_retry(self, operation: Dict[str, Any]) -> bool:
         """
         Pousse une opération vers le serveur avec retry et backoff exponentiel.
 
         Args:
-            operation: L'opération à pousser.
+            operation: L'opération à pousser (doit contenir idempotency_key).
 
         Returns:
             bool: True si l'opération a été synchronisée avec succès.
@@ -130,13 +147,14 @@ class SyncService:
                 if await self._push_to_server(operation):
                     return True
                 logger.warning(
-                    "Tentative %d/%d échouée pour opération %s",
-                    attempt + 1, self.max_retries, operation.get("entity_type"),
+                    "Tentative %d/%d échouée pour opération %s (clé: %s)",
+                    attempt + 1, self.max_retries,
+                    operation.get("entity_type"),
+                    operation.get("idempotency_key"),
                 )
             except Exception as e:
                 logger.error("Erreur sync tentative %d: %s", attempt + 1, e)
 
-            # Backoff exponentiel: 1s, 2s, 4s, 8s...
             delay = self.base_delay * (2 ** attempt)
             await asyncio.sleep(delay)
 
@@ -144,10 +162,10 @@ class SyncService:
 
     async def _push_to_server(self, operation: Dict[str, Any]) -> bool:
         """
-        Pousse une opération vers le serveur via HTTP.
+        Pousse une opération vers le serveur via HTTP avec la clé d'idempotence.
 
         Args:
-            operation: L'opération à pousser.
+            operation: L'opération à pousser (avec idempotency_key).
 
         Returns:
             bool: True si le serveur a confirmé la réception.
@@ -160,11 +178,15 @@ class SyncService:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     f"{self.server_url}/api/sync/push",
-                    json=operation,
+                    json=operation,  # Inclut idempotency_key
                     timeout=aiohttp.ClientTimeout(total=10),
                 ) as response:
                     if response.status == 200:
-                        logger.info("Opération syncée: %s", operation.get("entity_type"))
+                        logger.info("Opération syncée: %s (clé: %s)", operation.get("entity_type"), operation.get("idempotency_key"))
+                        return True
+                    elif response.status == 409:
+                        # Conflit d'idempotence : l'opération existe déjà côté serveur
+                        logger.info("Opération déjà traitée côté serveur (idempotence): %s", operation.get("idempotency_key"))
                         return True
                     else:
                         logger.error("Erreur serveur sync: status %d", response.status)

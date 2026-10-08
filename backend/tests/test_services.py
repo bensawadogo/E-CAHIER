@@ -29,44 +29,44 @@ class FakeCustomerRepository:
     def __init__(self):
         self._store = {}
 
-    def add(self, customer: Customer) -> Customer:
+    def add(self, customer: Customer, conn=None) -> Customer:
         self._store[customer.id] = customer
         return customer
 
-    def get_by_id(self, customer_id: str) -> Optional[Customer]:
+    def get_by_id(self, customer_id: str, conn=None) -> Optional[Customer]:
         return self._store.get(customer_id)
 
-    def get_all(self, offset: int = 0, limit: Optional[int] = None) -> List[Customer]:
+    def get_all(self, offset: int = 0, limit: Optional[int] = None, conn=None) -> List[Customer]:
         items = list(self._store.values())
         if limit is None:
             return items[offset:]
         return items[offset:offset + limit]
 
-    def get_active(self, offset: int = 0, limit: Optional[int] = None) -> List[Customer]:
+    def get_active(self, offset: int = 0, limit: Optional[int] = None, conn=None) -> List[Customer]:
         items = [c for c in self._store.values() if c.is_active]
         if limit is None:
             return items[offset:]
         return items[offset:offset + limit]
 
-    def count_all(self) -> int:
+    def count_all(self, conn=None) -> int:
         return len(self._store)
 
-    def count_active(self) -> int:
+    def count_active(self, conn=None) -> int:
         return sum(1 for c in self._store.values() if c.is_active)
 
-    def update(self, customer: Customer) -> Customer:
+    def update(self, customer: Customer, conn=None) -> Customer:
         if customer.id not in self._store:
             raise ValueError(f"Aucun client trouvé avec l'ID {customer.id}.")
         self._store[customer.id] = customer
         return customer
 
-    def delete(self, customer_id: str) -> None:
+    def delete(self, customer_id: str, conn=None) -> None:
         if customer_id not in self._store:
             raise ValueError(f"Aucun client trouvé avec l'ID {customer_id}.")
         del self._store[customer_id]
 
     def search_by_name(
-        self, query: str, offset: int = 0, limit: Optional[int] = None
+        self, query: str, offset: int = 0, limit: Optional[int] = None, conn=None
     ) -> List[Customer]:
         q = query.lower()
         items = [c for c in self._store.values() if q in c.name.lower()]
@@ -79,29 +79,29 @@ class FakeCreditRepository:
     def __init__(self):
         self._store = {}
 
-    def add(self, credit: Credit) -> Credit:
+    def add(self, credit: Credit, conn=None) -> Credit:
         self._store[credit.id] = credit
         return credit
 
-    def get_by_id(self, credit_id: str) -> Optional[Credit]:
+    def get_by_id(self, credit_id: str, conn=None) -> Optional[Credit]:
         return self._store.get(credit_id)
 
     def get_by_customer(
-        self, customer_id: str, offset: int = 0, limit: Optional[int] = None
+        self, customer_id: str, offset: int = 0, limit: Optional[int] = None, conn=None
     ) -> List[Credit]:
         items = [c for c in self._store.values() if c.customer_id == customer_id]
         if limit is None:
             return items[offset:]
         return items[offset:offset + limit]
 
-    def get_all(self, offset: int = 0, limit: Optional[int] = None) -> List[Credit]:
+    def get_all(self, offset: int = 0, limit: Optional[int] = None, conn=None) -> List[Credit]:
         items = list(self._store.values())
         if limit is None:
             return items[offset:]
         return items[offset:offset + limit]
 
     def get_pending(
-        self, offset: int = 0, limit: Optional[int] = None
+        self, offset: int = 0, limit: Optional[int] = None, conn=None
     ) -> List[Credit]:
         items = [c for c in self._store.values() if c.status in ("pending", "partial")]
         if limit is None:
@@ -109,7 +109,7 @@ class FakeCreditRepository:
         return items[offset:offset + limit]
 
     def get_overdue(
-        self, offset: int = 0, limit: Optional[int] = None
+        self, offset: int = 0, limit: Optional[int] = None, conn=None
     ) -> List[Credit]:
         now = datetime.now(timezone.utc)
         items = [
@@ -120,26 +120,26 @@ class FakeCreditRepository:
             return items[offset:]
         return items[offset:offset + limit]
 
-    def count_all(self) -> int:
+    def count_all(self, conn=None) -> int:
         return len(self._store)
 
-    def count_pending(self) -> int:
+    def count_pending(self, conn=None) -> int:
         return sum(1 for c in self._store.values() if c.status in ("pending", "partial"))
 
-    def count_overdue(self) -> int:
+    def count_overdue(self, conn=None) -> int:
         now = datetime.now(timezone.utc)
         return sum(
             1 for c in self._store.values()
             if c.status in ("pending", "partial") and c.due_date < now
         )
 
-    def update(self, credit: Credit) -> Credit:
+    def update(self, credit: Credit, conn=None) -> Credit:
         if credit.id not in self._store:
             raise ValueError(f"Aucun crédit trouvé avec l'ID {credit.id}.")
         self._store[credit.id] = credit
         return credit
 
-    def delete(self, credit_id: str) -> None:
+    def delete(self, credit_id: str, conn=None) -> None:
         if credit_id not in self._store:
             raise ValueError(f"Aucun crédit trouvé avec l'ID {credit_id}.")
         del self._store[credit_id]
@@ -149,15 +149,15 @@ class FakePaymentRepository:
     def __init__(self):
         self._store = {}
 
-    def add(self, payment: Payment) -> Payment:
+    def add(self, payment: Payment, conn=None) -> Payment:
         self._store[payment.id] = payment
         return payment
 
-    def get_by_id(self, payment_id: str) -> Optional[Payment]:
+    def get_by_id(self, payment_id: str, conn=None) -> Optional[Payment]:
         return self._store.get(payment_id)
 
     def get_by_customer(
-        self, customer_id: str, offset: int = 0, limit: Optional[int] = None
+        self, customer_id: str, offset: int = 0, limit: Optional[int] = None, conn=None
     ) -> List[Payment]:
         items = [p for p in self._store.values() if p.customer_id == customer_id]
         if limit is None:
@@ -165,35 +165,35 @@ class FakePaymentRepository:
         return items[offset:offset + limit]
 
     def get_by_credit(
-        self, credit_id: str, offset: int = 0, limit: Optional[int] = None
+        self, credit_id: str, offset: int = 0, limit: Optional[int] = None, conn=None
     ) -> List[Payment]:
         items = [p for p in self._store.values() if p.credit_id == credit_id]
         if limit is None:
             return items[offset:]
         return items[offset:offset + limit]
 
-    def get_all(self, offset: int = 0, limit: Optional[int] = None) -> List[Payment]:
+    def get_all(self, offset: int = 0, limit: Optional[int] = None, conn=None) -> List[Payment]:
         items = list(self._store.values())
         if limit is None:
             return items[offset:]
         return items[offset:offset + limit]
 
-    def count_all(self) -> int:
+    def count_all(self, conn=None) -> int:
         return len(self._store)
 
-    def total_paid_for_credit(self, credit_id: str) -> Decimal:
+    def total_paid_for_credit(self, credit_id: str, conn=None) -> Decimal:
         return sum(
             (p.amount for p in self._store.values() if p.credit_id == credit_id),
             Decimal("0"),
         )
 
-    def update(self, payment: Payment) -> Payment:
+    def update(self, payment: Payment, conn=None) -> Payment:
         if payment.id not in self._store:
             raise ValueError(f"Aucun paiement trouvé avec l'ID {payment.id}.")
         self._store[payment.id] = payment
         return payment
 
-    def delete(self, payment_id: str) -> None:
+    def delete(self, payment_id: str, conn=None) -> None:
         if payment_id not in self._store:
             raise ValueError(f"Aucun paiement trouvé avec l'ID {payment_id}.")
         del self._store[payment_id]
@@ -203,39 +203,39 @@ class FakeTransactionRepository:
     def __init__(self):
         self._store = {}
 
-    def add(self, transaction: Transaction) -> Transaction:
+    def add(self, transaction: Transaction, conn=None) -> Transaction:
         self._store[transaction.id] = transaction
         return transaction
 
-    def get_by_id(self, transaction_id: str) -> Optional[Transaction]:
+    def get_by_id(self, transaction_id: str, conn=None) -> Optional[Transaction]:
         return self._store.get(transaction_id)
 
     def get_by_customer(
-        self, customer_id: str, offset: int = 0, limit: Optional[int] = None
+        self, customer_id: str, offset: int = 0, limit: Optional[int] = None, conn=None
     ) -> List[Transaction]:
         items = [t for t in self._store.values() if t.customer_id == customer_id]
         if limit is None:
             return items[offset:]
         return items[offset:offset + limit]
 
-    def get_all(self, offset: int = 0, limit: Optional[int] = None) -> List[Transaction]:
+    def get_all(self, offset: int = 0, limit: Optional[int] = None, conn=None) -> List[Transaction]:
         items = list(self._store.values())
         if limit is None:
             return items[offset:]
         return items[offset:offset + limit]
 
-    def count_all(self) -> int:
+    def count_all(self, conn=None) -> int:
         return len(self._store)
 
     def get_pending_sync(
-        self, offset: int = 0, limit: Optional[int] = None
+        self, offset: int = 0, limit: Optional[int] = None, conn=None
     ) -> List[Transaction]:
         items = [t for t in self._store.values() if t.sync_status == "pending"]
         if limit is None:
             return items[offset:]
         return items[offset:offset + limit]
 
-    def delete(self, transaction_id: str) -> None:
+    def delete(self, transaction_id: str, conn=None) -> None:
         if transaction_id not in self._store:
             raise ValueError(f"Aucune transaction trouvée avec l'ID {transaction_id}.")
         del self._store[transaction_id]

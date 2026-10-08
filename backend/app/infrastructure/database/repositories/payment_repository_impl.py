@@ -15,6 +15,10 @@ from backend.app.infrastructure.database.sqlite_connection import SQLiteConnecti
 class SQLitePaymentRepository(PaymentRepository):
     """Implémentation concrète du PaymentRepository utilisant SQLite."""
 
+    # Pagination limits to prevent memory issues on low-end devices
+    MAX_PAGE_SIZE = 200
+    DEFAULT_PAGE_SIZE = 50
+
     def __init__(self, connection_manager: SQLiteConnectionManager):
         self.connection_manager = connection_manager
         self._create_table()
@@ -22,6 +26,7 @@ class SQLitePaymentRepository(PaymentRepository):
     def _create_table(self) -> None:
         """Crée la table 'payments' et ses index si elle n'existe pas."""
         with self.connection_manager.connection() as conn:
+            # Create table with all constraints if not exists
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS payments (
@@ -37,7 +42,9 @@ class SQLitePaymentRepository(PaymentRepository):
                     updated_at TEXT NOT NULL,
                     sync_status TEXT NOT NULL DEFAULT 'pending',
                     FOREIGN KEY (customer_id) REFERENCES customers(id),
-                    FOREIGN KEY (credit_id) REFERENCES credits(id)
+                    FOREIGN KEY (credit_id) REFERENCES credits(id),
+                    CHECK(method IN ('cash', 'mobile_money', 'bank_transfer', 'other')),
+                    CHECK(sync_status IN ('pending', 'synced', 'conflict'))
                 )
                 """
             )
@@ -54,6 +61,13 @@ class SQLitePaymentRepository(PaymentRepository):
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_payments_sync ON payments(sync_status)"
             )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_payments_method ON payments(method)"
+            )
+            # Schema version tracking for future migrations
+            version = conn.execute("PRAGMA user_version").fetchone()[0]
+            if version < 1:
+                conn.execute("PRAGMA user_version = 1")
 
     @staticmethod
     def _pagination_sql(offset: int, limit: Optional[int]) -> tuple:
@@ -82,9 +96,9 @@ class SQLitePaymentRepository(PaymentRepository):
             sync_status=row["sync_status"],
         )
 
-    def add(self, payment: Payment) -> Payment:
+    def add(self, payment: Payment, conn=None) -> Payment:
         """Ajoute un nouveau paiement à la base de données."""
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute(
                 """
                 INSERT INTO payments
@@ -102,9 +116,9 @@ class SQLitePaymentRepository(PaymentRepository):
             )
         return payment
 
-    def get_by_id(self, payment_id: str) -> Optional[Payment]:
+    def get_by_id(self, payment_id: str, conn=None) -> Optional[Payment]:
         """Récupère un paiement par son ID."""
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute(
                 """
                 SELECT id, customer_id, credit_id, amount, method, reference,
@@ -121,8 +135,12 @@ class SQLitePaymentRepository(PaymentRepository):
         customer_id: str,
         offset: int = 0,
         limit: Optional[int] = None,
+        conn=None,
     ) -> List[Payment]:
         """Retourne tous les paiements d'un client (paginé)."""
+        # Enforce max page size to prevent memory issues on low-end devices
+        if limit is None or limit > self.MAX_PAGE_SIZE:
+            limit = self.DEFAULT_PAGE_SIZE
         pagination, params = self._pagination_sql(offset, limit)
         sql = (
             "SELECT id, customer_id, credit_id, amount, method, reference, "
@@ -130,7 +148,7 @@ class SQLitePaymentRepository(PaymentRepository):
             "FROM payments WHERE customer_id = ? ORDER BY payment_date DESC"
             + pagination
         )
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute(sql, (customer_id,) + params)
             return [self._row_to_payment(row) for row in cur.fetchall()]
 
@@ -139,8 +157,12 @@ class SQLitePaymentRepository(PaymentRepository):
         credit_id: str,
         offset: int = 0,
         limit: Optional[int] = None,
+        conn=None,
     ) -> List[Payment]:
         """Retourne tous les paiements liés à un crédit (paginé)."""
+        # Enforce max page size to prevent memory issues on low-end devices
+        if limit is None or limit > self.MAX_PAGE_SIZE:
+            limit = self.DEFAULT_PAGE_SIZE
         pagination, params = self._pagination_sql(offset, limit)
         sql = (
             "SELECT id, customer_id, credit_id, amount, method, reference, "
@@ -148,12 +170,15 @@ class SQLitePaymentRepository(PaymentRepository):
             "FROM payments WHERE credit_id = ? ORDER BY payment_date DESC"
             + pagination
         )
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute(sql, (credit_id,) + params)
             return [self._row_to_payment(row) for row in cur.fetchall()]
 
-    def get_all(self, offset: int = 0, limit: Optional[int] = None) -> List[Payment]:
+    def get_all(self, offset: int = 0, limit: Optional[int] = None, conn=None) -> List[Payment]:
         """Récupère tous les paiements (paginé)."""
+        # Enforce max page size to prevent memory issues on low-end devices
+        if limit is None or limit > self.MAX_PAGE_SIZE:
+            limit = self.DEFAULT_PAGE_SIZE
         pagination, params = self._pagination_sql(offset, limit)
         sql = (
             "SELECT id, customer_id, credit_id, amount, method, reference, "
@@ -161,31 +186,39 @@ class SQLitePaymentRepository(PaymentRepository):
             "FROM payments ORDER BY payment_date DESC"
             + pagination
         )
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute(sql, params)
             return [self._row_to_payment(row) for row in cur.fetchall()]
 
-    def count_all(self) -> int:
+    def count_all(self, conn=None) -> int:
         """Retourne le nombre total de paiements."""
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute("SELECT COUNT(*) FROM payments")
             return int(cur.fetchone()[0])
 
-    def total_paid_for_credit(self, credit_id: str) -> Decimal:
-        """Retourne le total des montants payés pour un crédit (SUM SQL)."""
-        with self.connection_manager.cursor() as cur:
+    def total_paid_for_credit(self, credit_id: str, conn=None) -> Decimal:
+        """Retourne le total des montants payés pour un crédit.
+
+        Les montants sont stockés en TEXT (chaînes décimales exactes) et
+        additionnés en Python avec `Decimal` : SQLite ne possède aucune
+        arithmétique décimale exacte (SUM passerait par le double IEEE-754),
+        ce qui faisait dériver le total cumulé sur de nombreux paiements.
+        """
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute(
-                "SELECT COALESCE(SUM(CAST(amount AS REAL)), 0) FROM payments "
-                "WHERE credit_id = ?",
+                "SELECT amount FROM payments WHERE credit_id = ?",
                 (credit_id,),
             )
-            return Decimal(str(cur.fetchone()[0]))
+            total = Decimal("0")
+            for (amount_text,) in cur.fetchall():
+                total += Decimal(amount_text)
+            return total
 
-    def update(self, payment: Payment) -> Payment:
+    def update(self, payment: Payment, conn=None) -> Payment:
         """Met à jour un paiement existant."""
         if not payment.id:
             raise ValueError("L'ID du paiement est requis pour la mise à jour.")
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute(
                 """
                 UPDATE payments SET
@@ -205,9 +238,9 @@ class SQLitePaymentRepository(PaymentRepository):
                 raise ValueError(f"Aucun paiement trouvé avec l'ID {payment.id}.")
         return payment
 
-    def delete(self, payment_id: str) -> None:
+    def delete(self, payment_id: str, conn=None) -> None:
         """Supprime un paiement par son ID."""
-        with self.connection_manager.cursor() as cur:
+        with self.connection_manager.cursor(conn) as cur:
             cur.execute("DELETE FROM payments WHERE id = ?", (payment_id,))
             if cur.rowcount == 0:
                 raise ValueError(f"Aucun paiement trouvé avec l'ID {payment_id}.")

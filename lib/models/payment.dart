@@ -1,14 +1,14 @@
 class Payment {
   final String id;
   final String customerId;
-  final double amount;
+  final int amountCentimes;
   final String method;
   final DateTime createdAt;
 
   Payment({
     required this.id,
     required this.customerId,
-    required this.amount,
+    required this.amountCentimes,
     this.method = 'cash',
     required this.createdAt,
   });
@@ -17,7 +17,7 @@ class Payment {
     return Payment(
       id: json['id'] ?? '',
       customerId: json['customer_id'] ?? '',
-      amount: (json['amount'] ?? 0).toDouble(),
+      amountCentimes: ((json['amount'] ?? 0) as num).toInt(),
       method: json['method'] ?? 'cash',
       createdAt: DateTime.parse(json['created_at'] ?? DateTime.now().toIso8601String()),
     );
@@ -27,7 +27,7 @@ class Payment {
     return {
       'id': id,
       'customer_id': customerId,
-      'amount': amount,
+      'amount': amountCentimes,
       'method': method,
       'created_at': createdAt.toIso8601String(),
     };

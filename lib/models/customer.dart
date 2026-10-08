@@ -6,6 +6,8 @@ class Customer {
   final String? notes;
   final bool isActive;
   final DateTime createdAt;
+  final int totalCredit;
+  final int totalPaid;
 
   Customer({
     required this.id,
@@ -15,6 +17,8 @@ class Customer {
     this.notes,
     this.isActive = true,
     required this.createdAt,
+    this.totalCredit = 0,
+    this.totalPaid = 0,
   });
 
   factory Customer.fromJson(Map<String, dynamic> json) {
@@ -26,6 +30,8 @@ class Customer {
       notes: json['notes'],
       isActive: json['is_active'] ?? true,
       createdAt: DateTime.parse(json['created_at'] ?? DateTime.now().toIso8601String()),
+      totalCredit: (json['total_credit'] as int?) ?? 0,
+      totalPaid: (json['total_paid'] as int?) ?? 0,
     );
   }
 
@@ -38,6 +44,8 @@ class Customer {
       'notes': notes,
       'is_active': isActive,
       'created_at': createdAt.toIso8601String(),
+      'total_credit': totalCredit,
+      'total_paid': totalPaid,
     };
   }
 }

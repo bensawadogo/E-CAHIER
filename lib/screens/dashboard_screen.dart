@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../services/api_service.dart';
+import '../repositories/ecahier_repository.dart';
 
 import '../models/index.dart';
 
@@ -27,6 +27,8 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
 
+  final _repository = EcahierRepository();
+
   late Future<List<Customer>> _futureCustomers;
 
   late Future<List<Credit>> _futureCredits;
@@ -49,13 +51,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   void _loadData() {
 
-    final api = ApiService();
+    _futureCustomers = _repository.getCustomers();
 
-    _futureCustomers = api.getCustomers();
+    _futureCredits = _repository.getCredits();
 
-    _futureCredits = api.getCredits();
-
-    _futurePayments = api.getPayments();
+    _futurePayments = _repository.getPayments();
 
   }
 
@@ -145,6 +145,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ]),
 
               builder: (context, snapshot) {
+
+                if (snapshot.hasError) {
+                  return ErrorState(
+                    message: 'Erreur de chargement',
+                    onRetry: () => setState(() => _loadData()),
+                  );
+                }
 
                 if (snapshot.connectionState == ConnectionState.waiting) {
 
@@ -253,6 +260,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
               future: _futureCustomers,
 
               builder: (context, snapshot) {
+
+                if (snapshot.hasError) {
+                  return ErrorState(
+                    message: 'Erreur de chargement',
+                    onRetry: () => setState(() => _loadData()),
+                  );
+                }
 
                 if (snapshot.connectionState == ConnectionState.waiting) {
 
@@ -368,6 +382,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
               builder: (context, snapshot) {
 
+                if (snapshot.hasError) {
+                  return ErrorState(
+                    message: 'Erreur de chargement',
+                    onRetry: () => setState(() => _loadData()),
+                  );
+                }
+
                 if (snapshot.connectionState == ConnectionState.waiting) {
 
                   return const Center(child: CircularProgressIndicator());
@@ -377,6 +398,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 final credits = (snapshot.data?[0] ?? <Credit>[]).cast<Credit>();
 
                 final customers = (snapshot.data?[1] ?? <Customer>[]).cast<Customer>();
+
+                final customerMap = {for (final c in customers) c.id: c};
 
                 final now = DateTime.now();
 
@@ -426,19 +449,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                       final credit = overdueCredits[index];
 
-                      final customer = customers.firstWhere(
-
-                        (c) => c.id == credit.customerId,
-
-                        orElse: () => Customer(
-
-                            id: '',
-
-                            name: 'Inconnu',
-
-                            createdAt: DateTime.now()),
-
-                      );
+                      final customer = customerMap[credit.customerId] ??
+                          Customer(
+                              id: '',
+                              name: 'Inconnu',
+                              createdAt: DateTime.now());
 
                       return ListTile(
 
@@ -460,7 +475,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                                 const TextStyle(color: AppColors.error)),
 
-                        subtitle: Text(formatCurrency(credit.amount),
+                        subtitle: Text(formatCurrency(credit.amountCentimes),
 
                             style: const TextStyle(
 

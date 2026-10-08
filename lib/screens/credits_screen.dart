@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../services/api_service.dart';
+import '../repositories/ecahier_repository.dart';
 import '../models/index.dart';
 import '../widgets/ecahier_widgets.dart';
 import '../theme/app_theme.dart';
@@ -13,6 +13,7 @@ class CreditsScreen extends StatefulWidget {
 }
 
 class _CreditsScreenState extends State<CreditsScreen> {
+  final _repository = EcahierRepository();
   late Future<List<Credit>> _futureCredits;
   late Future<List<Customer>> _futureCustomers;
 
@@ -23,8 +24,8 @@ class _CreditsScreenState extends State<CreditsScreen> {
   }
 
   void _loadData() {
-    _futureCredits = ApiService().getCredits();
-    _futureCustomers = ApiService().getCustomers();
+    _futureCredits = _repository.getCredits();
+    _futureCustomers = _repository.getCustomers();
   }
 
   void _showAddDialog() {
@@ -42,7 +43,13 @@ class _CreditsScreenState extends State<CreditsScreen> {
           children: [
             FutureBuilder<List<Customer>>(
               future: _futureCustomers,
-              builder: (context, snap) {
+               builder: (context, snap) {
+                if (snap.hasError) {
+                  return const Text(
+                    'Impossible de charger les clients',
+                    style: TextStyle(color: Colors.red),
+                  );
+                }
                 final customers = snap.data ?? [];
                 return DropdownButtonFormField<String>(
                   value: customerId,
@@ -77,10 +84,12 @@ class _CreditsScreenState extends State<CreditsScreen> {
           FilledButton(
             onPressed: () async {
               if (customerId == null || amountController.text.isEmpty) return;
-              await ApiService().createCredit(Credit(
+              final cents =
+                  (double.parse(amountController.text) * 100).round();
+              await _repository.createCredit(Credit(
                 id: DateTime.now().millisecondsSinceEpoch.toString(),
                 customerId: customerId!,
-                amount: double.parse(amountController.text),
+                amountCentimes: cents,
                 createdAt: DateTime.now(),
               ));
               if (!mounted) return;
@@ -115,13 +124,19 @@ class _CreditsScreenState extends State<CreditsScreen> {
                 FutureBuilder<List<List<Object>>>(
                   future: Future.wait([_futureCredits, _futureCustomers]),
                   builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      return ErrorState(
+                        message: 'Erreur de chargement',
+                        onRetry: () => setState(() => _loadData()),
+                      );
+                    }
                     if (snapshot.connectionState == ConnectionState.waiting) {
                       return const Center(child: CircularProgressIndicator());
                     }
                     final credits = (snapshot.data?[0] ?? <Credit>[]).cast<Credit>();
                     final totalActive = credits
                         .where((c) => c.status != 'paid')
-                        .fold<double>(0, (s, c) => s + c.amount);
+                        .fold<int>(0, (s, c) => s + c.amountCentimes);
                     return Text(
                       'Total à rembourser : ${formatCurrency(totalActive)}',
                       style: Theme.of(context)
@@ -138,11 +153,18 @@ class _CreditsScreenState extends State<CreditsScreen> {
             child: FutureBuilder<List<List<Object>>>(
               future: Future.wait([_futureCredits, _futureCustomers]),
               builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return ErrorState(
+                    message: 'Erreur de chargement',
+                    onRetry: () => setState(() => _loadData()),
+                  );
+                }
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
                 final credits = (snapshot.data?[0] ?? <Credit>[]).cast<Credit>();
                 final customers = (snapshot.data?[1] ?? <Customer>[]).cast<Customer>();
+                final customerMap = {for (final c in customers) c.id: c};
                 if (credits.isEmpty) {
                   return const EmptyState(
                     icon: AppIcons.credits,
@@ -155,9 +177,8 @@ class _CreditsScreenState extends State<CreditsScreen> {
                   separatorBuilder: (_, __) => const SizedBox(height: 8),
                   itemBuilder: (context, i) {
                     final credit = credits[i];
-                    final customer = customers.firstWhere(
-                        (c) => c.id == credit.customerId,
-                        orElse: () => Customer(
+                    final customer = customerMap[credit.customerId] ??
+                        Customer(
                             id: '', name: 'Inconnu', createdAt: DateTime.now()));
                     return _creditTile(context, credit, customer);
                   },
@@ -201,7 +222,7 @@ class _CreditsScreenState extends State<CreditsScreen> {
         ),
         title: Text(customer.name,
             style: const TextStyle(fontWeight: FontWeight.w600)),
-        subtitle: Text(formatCurrency(credit.amount),
+        subtitle: Text(formatCurrency(credit.amountCentimes),
             style: TextStyle(
                 color: accent, fontWeight: FontWeight.w600)),
         trailing: Column(
@@ -238,7 +259,7 @@ class _CreditsScreenState extends State<CreditsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _infoRow(AppIcons.money,
-                'Montant: ${formatCurrency(credit.amount)}'),
+                'Montant: ${formatCurrency(credit.amountCentimes)}'),
             if (credit.dueDate != null)
               _infoRow(AppIcons.calendar,
                   'Échéance: ${credit.dueDate!.toLocal().toString().split(' ')[0]}'),
