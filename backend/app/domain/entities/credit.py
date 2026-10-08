@@ -66,7 +66,10 @@ class Credit:
         """Vérifie si le crédit est en retard (échéance dépassée et non payé)."""
         if self.is_paid or self.status == "cancelled":
             return False
-        return datetime.now(timezone.utc) > self.due_date
+        due = self.due_date
+        if due.tzinfo is None:
+            due = due.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) > due
 
     def mark_paid(self) -> None:
         """Marque le crédit comme entièrement payé."""
