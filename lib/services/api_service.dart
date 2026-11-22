@@ -64,16 +64,19 @@ class ApiService {
   final String _baseUrl;
   final String _authToken;
   final Duration _retryDelay;
+  final Duration _timeout;
 
   ApiService({
     http.Client? client,
     String? baseUrl,
     String? authToken,
     Duration retryDelay = const Duration(seconds: 1),
+    Duration timeout = _defaultTimeout,
   })  : _client = client ?? http.Client(),
         _baseUrl = baseUrl ?? ApiService.baseUrl,
         _authToken = authToken ?? _envAuthToken,
-        _retryDelay = retryDelay;
+        _retryDelay = retryDelay,
+        _timeout = timeout;
 
   Map<String, String> get _headers => {
         'Content-Type': 'application/json',
@@ -88,8 +91,9 @@ class ApiService {
     String method,
     String path, {
     Object? body,
-    Duration timeout = _defaultTimeout,
+    Duration? timeout,
   }) async {
+    timeout ??= _timeout;
     final uri = Uri.parse('$_baseUrl$path');
     Object? lastError;
 

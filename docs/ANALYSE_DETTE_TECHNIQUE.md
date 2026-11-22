@@ -86,9 +86,17 @@ téléphone, ne jamais bloquer sur le réseau, ne jamais perdre une donnée sans
 ## Lancer les tests
 
 ```
-python -m pytest backend/tests            # backend (381 tests)
-flutter test                              # app (unitaires, repository, écrans, texte agrandi)
+python -m pytest backend/tests            # backend : 496 tests
+flutter test                              # app : 113 tests (+ 4 de bout en bout ignorés sans serveur)
 # bout en bout contre un vrai serveur :
 CAHIER_AUTH_TOKEN=e2e-token python -m uvicorn backend.app.main:app --port 8765
 E2E_API=http://127.0.0.1:8765/api flutter test test/e2e_backend_test.dart
 ```
+
+### Où est quoi
+
+| Type | Backend | Flutter |
+|---|---|---|
+| **Unitaires avec mocks** (aucune base, aucun réseau) | `test_unit_services_mocked.py` (services et règles de solde, dépôts simulés), `test_unit_api_mocked_services.py` (routes HTTP, services simulés), `test_unit_middleware_and_params.py` | `api_service_test.dart` (client HTTP simulé, `mocktail`), `repository_mocked_api_test.dart` (API simulée), `sync_screen_test.dart` (repository simulé) |
+| **Intégration** (vraie base SQLite) | `test_integration_scenarios.py` (téléphones, curseurs, suite d'opérations aléatoires qui vérifie les soldes), `test_ledger_integrity.py`, `test_transactions_atomicity.py`, `test_updated_since.py`, `integration/` | `dao_test.dart`, `repository_sync_test.dart`, `widget_test.dart` (texte agrandi) |
+| **Bout en bout** (app contre vrai serveur) | — | `e2e_backend_test.dart` (opt-in via `E2E_API`) |
