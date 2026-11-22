@@ -27,7 +27,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.14"]
+        # Même version que l'image Docker de production (backend/Dockerfile) :
+        # on teste ce qui tourne réellement. Les dépendances figées de
+        # requirements.txt (pydantic 2.5, aiohttp 3.9) ne s'installent pas
+        # toujours sur les Python plus récents.
+        python-version: ["3.11"]
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -53,25 +57,40 @@ jobs:
           cd backend
           pytest tests/ -v --tb=short
 
-  deploy:
-    needs: test
+  flutter:
+    # Sans ce job, une app qui ne compile pas passait la CI (le backend seul
+    # était testé).
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Login to Azure
-        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          channel: stable
+          cache: true
 
-      - name: Deploy to Azure App Service
-        uses: azure/webapps-deploy@02a81bead70021f5284939794bcec79c271ab383 # v3.0.8
-        with:
-          app-name: "ecahier-api"  # Remplacer par le nom de ton App Service
-          package: backend/
-          startup-command: "uvicorn backend.app.main:app --host 0.0.0.0 --port 8000"
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
 
-      - name: Logout from Azure
-        run: az logout
+  deploy:
+    # Le projet est hébergé sur Render (voir render.yaml et docs/DEPLOY.md).
+    # Render reconstruit l'image Docker quand on appelle le « Deploy Hook ».
+    # Secret à créer : RENDER_DEPLOY_HOOK_URL (Render > service > Settings >
+    # Deploy Hook). Sans ce secret, l'étape est ignorée (pas d'échec de CI).
+    needs: [test, flutter]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Déclencher le déploiement Render
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "RENDER_DEPLOY_HOOK_URL absent : déploiement ignoré."
+            exit 0
+          fi
+          curl --fail --silent --show-error --retry 3 --max-time 30 -X POST "$RENDER_DEPLOY_HOOK_URL" > /dev/null
+          echo "Déploiement Render déclenché."
