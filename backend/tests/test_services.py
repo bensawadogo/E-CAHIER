@@ -79,6 +79,13 @@ class FakeCreditRepository:
     def __init__(self):
         self._store = {}
 
+    def total_amount_for_customer(self, customer_id: str, conn=None) -> Decimal:
+        return sum(
+            (c.amount for c in self._store.values()
+             if c.customer_id == customer_id and c.status != "cancelled"),
+            Decimal("0"),
+        )
+
     def add(self, credit: Credit, conn=None) -> Credit:
         self._store[credit.id] = credit
         return credit
@@ -184,6 +191,12 @@ class FakePaymentRepository:
     def total_paid_for_credit(self, credit_id: str, conn=None) -> Decimal:
         return sum(
             (p.amount for p in self._store.values() if p.credit_id == credit_id),
+            Decimal("0"),
+        )
+
+    def total_paid_for_customer(self, customer_id: str, conn=None) -> Decimal:
+        return sum(
+            (p.amount for p in self._store.values() if p.customer_id == customer_id),
             Decimal("0"),
         )
 

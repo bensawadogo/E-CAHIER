@@ -47,6 +47,9 @@ class SQLiteCreditRepository(CreditRepository):
             )
             # Index pour accélérer les filtres et tris fréquents
             conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_credits_updated ON credits(updated_at)"
+            )
+            conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_credits_customer ON credits(customer_id)"
             )
             # Composite index for overdue query (status, due_date) - SQLite can only use one index per query
@@ -141,8 +144,19 @@ class SQLiteCreditRepository(CreditRepository):
             cur.execute(sql, (customer_id,) + params)
             return [self._row_to_credit(row) for row in cur.fetchall()]
 
-    def get_all(self, offset: int = 0, limit: Optional[int] = None, conn=None) -> List[Credit]:
-        """Récupère tous les crédits (paginé)."""
+    def get_all(
+        self,
+        offset: int = 0,
+        limit: Optional[int] = None,
+        conn=None,
+        updated_since: Optional[str] = None,
+    ) -> List[Credit]:
+        """Récupère tous les crédits (paginé).
+
+        ``updated_since`` (ISO 8601 UTC) : ne renvoie que les crédits modifiés
+        depuis cet instant, triés par date de modification (lecture
+        incrémentale : économise la connexion des téléphones).
+        """
         # Enforce max page size to prevent memory issues on low-end devices
         if limit is None or limit > self.MAX_PAGE_SIZE:
             limit = self.DEFAULT_PAGE_SIZE
@@ -150,9 +164,15 @@ class SQLiteCreditRepository(CreditRepository):
         sql = (
             "SELECT id, customer_id, amount, description, due_date, "
             "status, created_at, updated_at, sync_status "
-            "FROM credits ORDER BY created_at DESC"
+            "FROM credits"
+            + (
+                " WHERE updated_at >= ? ORDER BY updated_at ASC, id ASC"
+                if updated_since else " ORDER BY created_at DESC"
+            )
             + pagination
         )
+        if updated_since:
+            params = (updated_since,) + tuple(params)
         with self.connection_manager.cursor(conn) as cur:
             cur.execute(sql, params)
             return [self._row_to_credit(row) for row in cur.fetchall()]
@@ -202,10 +222,30 @@ class SQLiteCreditRepository(CreditRepository):
             cur.execute(sql, (now,) + params)
             return [self._row_to_credit(row) for row in cur.fetchall()]
 
-    def count_all(self, conn=None) -> int:
-        """Retourne le nombre total de crédits."""
+    def total_amount_for_customer(self, customer_id: str, conn=None) -> Decimal:
+        """Dette totale d'un client : somme des crédits NON annulés.
+
+        Additionnée en Decimal côté Python (les montants sont du texte exact ;
+        SUM de SQLite passerait par un flottant).
+        """
         with self.connection_manager.cursor(conn) as cur:
-            cur.execute("SELECT COUNT(*) FROM credits")
+            cur.execute(
+                "SELECT amount FROM credits "
+                "WHERE customer_id = ? AND status != 'cancelled'",
+                (customer_id,),
+            )
+            total = Decimal("0")
+            for (amount_text,) in cur.fetchall():
+                total += Decimal(amount_text)
+            return total
+
+    def count_all(self, conn=None, updated_since: Optional[str] = None) -> int:
+        """Nombre total de crédits (modifiés depuis ``updated_since`` si fourni)."""
+        sql, params = "SELECT COUNT(*) FROM credits", ()
+        if updated_since:
+            sql, params = sql + " WHERE updated_at >= ?", (updated_since,)
+        with self.connection_manager.cursor(conn) as cur:
+            cur.execute(sql, params)
             return int(cur.fetchone()[0])
 
     def count_pending(self, conn=None) -> int:
@@ -231,6 +271,9 @@ class SQLiteCreditRepository(CreditRepository):
         """Met à jour un crédit existant."""
         if not credit.id:
             raise ValueError("L'ID du crédit est requis pour la mise à jour.")
+        # Toute modification date l'enregistrement : c'est ce qui permet aux
+        # téléphones de recevoir le changement (lecture incrémentale).
+        credit.updated_at = datetime.now(timezone.utc)
         with self.connection_manager.cursor(conn) as cur:
             cur.execute(
                 """

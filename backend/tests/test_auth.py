@@ -90,3 +90,10 @@ class TestAuth:
         """Les routes hors /api/* (ex: /health) restent accessibles sans token."""
         r = noauth_client.get("/health")
         assert r.status_code == 200
+
+    def test_status_commits_needs_token(self, noauth_client):
+        """L'historique git n'est plus public : sans jeton -> 401."""
+        assert noauth_client.get("/status/commits").status_code == 401
+
+    def test_status_commits_with_token(self, client):
+        assert client.get("/status/commits").status_code == 200

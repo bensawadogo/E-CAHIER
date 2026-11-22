@@ -4,6 +4,7 @@ Définit le contrat pour la persistance des crédits.
 """
 
 from abc import ABC, abstractmethod
+from decimal import Decimal
 from typing import List, Optional
 
 from backend.app.domain.entities.credit import Credit
@@ -37,6 +38,7 @@ class CreditRepository(ABC):
         self,
         offset: int = 0,
         limit: Optional[int] = None,
+        updated_since: Optional[str] = None,
     ) -> List[Credit]:
         """Retourne la liste de tous les crédits (paginable)."""
         ...
@@ -60,7 +62,12 @@ class CreditRepository(ABC):
         ...
 
     @abstractmethod
-    def count_all(self) -> int:
+    def total_amount_for_customer(self, customer_id: str) -> Decimal:
+        """Dette totale d'un client : somme des crédits non annulés."""
+        ...
+
+    @abstractmethod
+    def count_all(self, updated_since: Optional[str] = None) -> int:
         """Retourne le nombre total de crédits."""
         ...
 

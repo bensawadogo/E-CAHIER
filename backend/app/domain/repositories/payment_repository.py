@@ -48,12 +48,18 @@ class PaymentRepository(ABC):
         self,
         offset: int = 0,
         limit: Optional[int] = None,
+        updated_since: Optional[str] = None,
     ) -> List[Payment]:
         """Retourne la liste de tous les paiements (paginable)."""
         ...
 
     @abstractmethod
-    def count_all(self) -> int:
+    def total_paid_for_customer(self, customer_id: str) -> Decimal:
+        """Total payé par un client, tous crédits confondus."""
+        ...
+
+    @abstractmethod
+    def count_all(self, updated_since: Optional[str] = None) -> int:
         """Retourne le nombre total de paiements."""
         ...
 

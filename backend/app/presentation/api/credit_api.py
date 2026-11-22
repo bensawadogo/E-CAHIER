@@ -6,7 +6,7 @@ Endpoints REST pour la gestion des crédits.
 import logging
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from backend.app.application.dto.credit_dto import (
     CreateCreditRequest,
@@ -15,22 +15,14 @@ from backend.app.application.dto.credit_dto import (
     CreditListResponse,
 )
 from backend.app.application.services.credit_service import CreditService
+from backend.app.application.services.errors import ConflictError
+
+from backend.app.presentation.dependencies import service_getter, updated_since_param
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/credits", tags=["credits"])
 
-_credit_service: Optional[CreditService] = None
-
-
-def set_credit_service(service: CreditService) -> None:
-    global _credit_service
-    _credit_service = service
-
-
-def get_credit_service() -> CreditService:
-    if _credit_service is None:
-        raise RuntimeError("CreditService non initialisé.")
-    return _credit_service
+get_credit_service = service_getter("credit_service", "CreditService")
 
 
 def _to_response(credit) -> CreditResponse:
@@ -44,9 +36,11 @@ def _to_response(credit) -> CreditResponse:
 
 
 @router.post("/", response_model=CreditResponse, status_code=status.HTTP_201_CREATED)
-def create_credit(request: CreateCreditRequest):
+def create_credit(
+    request: CreateCreditRequest,
+    service: CreditService = Depends(get_credit_service),
+):
     """Crée un nouveau crédit."""
-    service = get_credit_service()
     try:
         return _to_response(service.create_credit(request))
     except ValueError as e:
@@ -59,11 +53,16 @@ def list_credits(
     overdue_only: bool = Query(False),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
+    updated_since: Optional[str] = Depends(updated_since_param),
+    service: CreditService = Depends(get_credit_service),
 ):
     """Liste les crédits avec pagination et filtres."""
-    service = get_credit_service()
     offset = (page - 1) * page_size
-    if overdue_only:
+    if updated_since:
+        credits, total = service.get_all_credits(
+            offset=offset, limit=page_size, updated_since=updated_since
+        )
+    elif overdue_only:
         credits, total = service.get_overdue_credits(offset=offset, limit=page_size)
     elif pending_only:
         credits, total = service.get_pending_credits(offset=offset, limit=page_size)
@@ -76,16 +75,20 @@ def list_credits(
 
 
 @router.get("/customer/{customer_id}", response_model=List[CreditResponse])
-def get_customer_credits(customer_id: str):
+def get_customer_credits(
+    customer_id: str,
+    service: CreditService = Depends(get_credit_service),
+):
     """Récupère tous les crédits d'un client."""
-    service = get_credit_service()
     return [_to_response(c) for c in service.get_customer_credits(customer_id)]
 
 
 @router.get("/{credit_id}", response_model=CreditResponse)
-def get_credit(credit_id: str):
+def get_credit(
+    credit_id: str,
+    service: CreditService = Depends(get_credit_service),
+):
     """Récupère un crédit par son ID."""
-    service = get_credit_service()
     credit = service.get_credit(credit_id)
     if not credit:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Crédit introuvable.")
@@ -93,9 +96,11 @@ def get_credit(credit_id: str):
 
 
 @router.put("/{credit_id}", response_model=CreditResponse)
-def update_credit(credit_id: str, request: UpdateCreditRequest):
+def update_credit(
+    credit_id: str, request: UpdateCreditRequest,
+    service: CreditService = Depends(get_credit_service),
+):
     """Met à jour un crédit."""
-    service = get_credit_service()
     try:
         return _to_response(service.update_credit(credit_id, request))
     except ValueError as e:
@@ -103,10 +108,14 @@ def update_credit(credit_id: str, request: UpdateCreditRequest):
 
 
 @router.delete("/{credit_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_credit(credit_id: str):
+def delete_credit(
+    credit_id: str,
+    service: CreditService = Depends(get_credit_service),
+):
     """Supprime un crédit."""
-    service = get_credit_service()
     try:
         service.delete_credit(credit_id)
+    except ConflictError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))

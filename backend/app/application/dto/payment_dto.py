@@ -9,6 +9,11 @@ from pydantic import BaseModel, Field, validator
 
 class RecordPaymentRequest(BaseModel):
     """DTO pour enregistrer un paiement."""
+    id: Optional[str] = Field(
+        None,
+        pattern=r"^[A-Za-z0-9_-]{1,64}$",
+        description="ID généré par l'app (UUID) : rend la création idempotente",
+    )
     customer_id: str = Field(..., description="ID du client")
     credit_id: str = Field(..., description="ID du crédit associé")
     amount: Decimal = Field(..., gt=0, description="Montant du paiement en FCFA")

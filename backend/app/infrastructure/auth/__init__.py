@@ -1,4 +1,7 @@
-"""Ecahier - Auth infrastructure (JWT, password hashing)."""
+"""Ecahier - Auth infrastructure (hachage de mots de passe).
+
+L'accès à l'API est protégé par ``AuthMiddleware`` (token Bearer statique).
+"""
 
 import hashlib
 import hmac
@@ -77,18 +80,6 @@ class AuthManager:
             return hmac.compare_digest(hashed, test_hash)
         except (ValueError, AttributeError):
             return False
-
-    def generate_token(self, user_id: str) -> str:
-        """Génère un token d'authentification simple."""
-        return f"{user_id}:{secrets.token_hex(32)}"
-
-    def verify_token(self, token: str) -> Optional[str]:
-        """Vérifie un token et retourne l'ID utilisateur, ou None si invalide."""
-        try:
-            user_id, _ = token.split(":", 1)
-            return user_id
-        except (ValueError, AttributeError):
-            return None
 
 
 __all__ = ["AuthManager"]

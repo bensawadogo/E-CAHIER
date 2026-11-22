@@ -8,7 +8,7 @@ Sécurité intégrée :
 """
 
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import List, Optional
 
@@ -117,6 +117,9 @@ class SQLiteCustomerRepository(CustomerRepository):
             )
             # Index pour accélérer le tri (ORDER BY name) et les filtres fréquents
             conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_customers_updated ON customers(updated_at)"
+            )
+            conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name)"
             )
             conn.execute(
@@ -188,8 +191,19 @@ class SQLiteCustomerRepository(CustomerRepository):
             row = cur.fetchone()
             return self._decrypt_pii(row) if row else None
 
-    def get_all(self, offset: int = 0, limit: Optional[int] = None, conn=None) -> List[Customer]:
-        """Récupère tous les clients (paginé)."""
+    def get_all(
+        self,
+        offset: int = 0,
+        limit: Optional[int] = None,
+        conn=None,
+        updated_since: Optional[str] = None,
+    ) -> List[Customer]:
+        """Récupère tous les clients (paginé).
+
+        ``updated_since`` (ISO 8601 UTC) : ne renvoie que les clients modifiés
+        depuis cet instant, triés par date de modification (lecture
+        incrémentale : économise la connexion des téléphones).
+        """
         # Enforce max page size to prevent memory issues on low-end devices
         if limit is None or limit > self.MAX_PAGE_SIZE:
             limit = self.DEFAULT_PAGE_SIZE
@@ -198,9 +212,15 @@ class SQLiteCustomerRepository(CustomerRepository):
             "SELECT id, name, phone, address, notes, photo_path, "
             "total_credit, total_paid, is_active, "
             "created_at, updated_at, sync_status "
-            "FROM customers ORDER BY name ASC"
+            "FROM customers"
+            + (
+                " WHERE updated_at >= ? ORDER BY updated_at ASC, id ASC"
+                if updated_since else " ORDER BY name ASC"
+            )
             + pagination
         )
+        if updated_since:
+            params = (updated_since,) + tuple(params)
         with self.connection_manager.cursor(conn) as cur:
             cur.execute(sql, params)
             return [self._decrypt_pii(row) for row in cur.fetchall()]
@@ -222,10 +242,13 @@ class SQLiteCustomerRepository(CustomerRepository):
             cur.execute(sql, params)
             return [self._decrypt_pii(row) for row in cur.fetchall()]
 
-    def count_all(self, conn=None) -> int:
-        """Retourne le nombre total de clients."""
+    def count_all(self, conn=None, updated_since: Optional[str] = None) -> int:
+        """Nombre total de clients (modifiés depuis ``updated_since`` si fourni)."""
+        sql, params = "SELECT COUNT(*) FROM customers", ()
+        if updated_since:
+            sql, params = sql + " WHERE updated_at >= ?", (updated_since,)
         with self.connection_manager.cursor(conn) as cur:
-            cur.execute("SELECT COUNT(*) FROM customers")
+            cur.execute(sql, params)
             return int(cur.fetchone()[0])
 
     def count_active(self, conn=None) -> int:
@@ -238,6 +261,9 @@ class SQLiteCustomerRepository(CustomerRepository):
         """Met à jour un client existant."""
         if not customer.id:
             raise ValueError("L'ID du client est requis pour la mise à jour.")
+        # Toute modification date l'enregistrement : c'est ce qui permet aux
+        # téléphones de recevoir le changement (lecture incrémentale).
+        customer.updated_at = datetime.now(timezone.utc)
 
         pii = self._encrypt_pii(customer)
         with self.connection_manager.cursor(conn) as cur:

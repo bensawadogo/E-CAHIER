@@ -38,19 +38,21 @@ class TestOverdueFilter:
 
 
 class TestServiceNotInitializedGuards:
-    """Chaque module API lève RuntimeError si le service n'a pas été injecté."""
+    """Chaque dépendance lève RuntimeError si le service n'a pas été posé."""
 
     @pytest.mark.parametrize(
-        "module,getter,attr",
+        "module,getter",
         [
-            (credit_api, "get_credit_service", "_credit_service"),
-            (customer_api, "get_customer_service", "_customer_service"),
-            (payment_api, "get_payment_service", "_payment_service"),
-            (transaction_api, "get_transaction_service", "_transaction_service"),
+            (credit_api, "get_credit_service"),
+            (customer_api, "get_customer_service"),
+            (payment_api, "get_payment_service"),
+            (transaction_api, "get_transaction_service"),
         ],
         ids=["credit", "customer", "payment", "transaction"],
     )
-    def test_get_service_raises_when_not_set(self, module, getter, attr, monkeypatch):
-        monkeypatch.setattr(module, attr, None)
+    def test_get_service_raises_when_not_set(self, module, getter):
+        from types import SimpleNamespace
+
+        vide = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace()))
         with pytest.raises(RuntimeError, match="non initialisé"):
-            getattr(module, getter)()
+            getattr(module, getter)(vide)

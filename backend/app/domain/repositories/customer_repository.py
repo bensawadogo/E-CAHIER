@@ -27,6 +27,7 @@ class CustomerRepository(ABC):
         self,
         offset: int = 0,
         limit: Optional[int] = None,
+        updated_since: Optional[str] = None,
     ) -> List[Customer]:
         """
         Retourne la liste des clients (paginable).
@@ -47,7 +48,7 @@ class CustomerRepository(ABC):
         ...
 
     @abstractmethod
-    def count_all(self) -> int:
+    def count_all(self, updated_since: Optional[str] = None) -> int:
         """Retourne le nombre total de clients."""
         ...
 

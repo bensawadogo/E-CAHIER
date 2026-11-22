@@ -76,6 +76,11 @@ class Credit:
         self.status = "paid"
         self.updated_at = datetime.now(timezone.utc)
 
+    def mark_pending(self) -> None:
+        """Remet le crédit « en attente » (aucun paiement)."""
+        self.status = "pending"
+        self.updated_at = datetime.now(timezone.utc)
+
     def mark_partial(self) -> None:
         """Marque le crédit comme partiellement payé."""
         self.status = "partial"
