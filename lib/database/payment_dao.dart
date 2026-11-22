@@ -1,84 +1,46 @@
 import 'package:sqflite/sqflite.dart';
+
 import '../models/payment.dart';
+import '../utils/parsing.dart';
+import 'base_dao.dart';
 import 'database.dart';
 
-/// Data Access Object for Payment.
-class PaymentDao {
-  Future<Database> get _db => DatabaseHelper.instance.database;
+class PaymentDao extends BaseDao<Payment> {
+  @override
+  String get tableName => 'payments';
 
-  static const String tableName = 'payments';
+  @override
+  String get defaultOrder => 'created_at DESC';
 
-  Future<List<Payment>> getAll() async {
-    final db = await _db;
-    final List<Map<String, dynamic>> maps = await db.query(
-      tableName,
-      orderBy: 'created_at DESC',
-    );
-    return maps.map((map) => _fromMap(map)).toList();
+  /// Total déjà payé pour un crédit (somme calculée par SQLite, sans charger
+  /// les lignes en mémoire).
+  Future<int> totalForCredit(String creditId,
+      {DatabaseExecutor? executor}) async {
+    final db = executor ?? await DatabaseHelper.instance.database;
+    final rows = await db.rawQuery(
+        'SELECT COALESCE(SUM(amount), 0) AS total FROM payments '
+        'WHERE credit_id = ?',
+        [creditId]);
+    return (rows.first['total'] as int?) ?? 0;
   }
 
-  Future<List<Payment>> getByCustomerId(String customerId) async {
-    final db = await _db;
-    final List<Map<String, dynamic>> maps = await db.query(
-      tableName,
-      where: 'customer_id = ?',
-      whereArgs: [customerId],
-      orderBy: 'created_at DESC',
-    );
-    return maps.map((map) => _fromMap(map)).toList();
-  }
+  @override
+  Map<String, Object?> toMap(Payment p) => {
+        'id': p.id,
+        'customer_id': p.customerId,
+        'credit_id': p.creditId,
+        'amount': p.amount,
+        'method': p.method,
+        'created_at': p.createdAt.toUtc().toIso8601String(),
+      };
 
-  Future<Payment?> getById(String id) async {
-    final db = await _db;
-    final List<Map<String, dynamic>> maps = await db.query(
-      tableName,
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-    if (maps.isEmpty) return null;
-    return _fromMap(maps.first);
-  }
-
-  Future<int> insert(Payment payment) async {
-    final db = await _db;
-    return db.insert(
-      tableName,
-      _toMap(payment),
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-  }
-
-  Future<int> upsert(Payment payment) async {
-    final db = await _db;
-    return db.insert(
-      tableName,
-      _toMap(payment),
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-  }
-
-  Future<int> delete(String id) async {
-    final db = await _db;
-    return db.delete(tableName, where: 'id = ?', whereArgs: [id]);
-  }
-
-  Map<String, dynamic> _toMap(Payment p) {
-    return {
-      'id': p.id,
-      'customer_id': p.customerId,
-      'amount': p.amountCentimes,
-      'method': p.method,
-      'created_at': p.createdAt.toIso8601String(),
-    };
-  }
-
-  Payment _fromMap(Map<String, dynamic> map) {
-    return Payment(
-      id: map['id'],
-      customerId: map['customer_id'],
-      amountCentimes: (map['amount'] as int?) ?? 0,
-      method: map['method'] ?? 'cash',
-      createdAt: DateTime.parse(map['created_at']),
-    );
-  }
+  @override
+  Payment fromMap(Map<String, Object?> map) => Payment(
+        id: map['id'] as String,
+        customerId: map['customer_id'] as String,
+        creditId: map['credit_id'] as String? ?? '',
+        amount: map['amount'] as int? ?? 0,
+        method: map['method'] as String? ?? 'cash',
+        createdAt: parseServerDate(map['created_at']),
+      );
 }

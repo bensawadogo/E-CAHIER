@@ -15,6 +15,10 @@ class AppColors {
   /// Couleur tertiaire — ambre pour les alertes et crédits.
   static const Color tertiary = Color(0xFFF59E0B);
 
+  /// Ambre foncé pour du TEXTE sur fond blanc (l'ambre clair ci-dessus n'a
+  /// que 2:1 de contraste, illisible en plein soleil).
+  static const Color tertiaryText = Color(0xFFB45309);
+
   /// Couleur d'erreur.
   static const Color error = Color(0xFFDC2626);
 
@@ -74,7 +78,7 @@ class AppTheme {
               fontSize: 15, fontWeight: FontWeight.w600, height: 1.2),
         ),
 
-                /// --- Scaffold ---
+        /// --- Scaffold ---
         scaffoldBackgroundColor: AppColors.surface,
 
         /// --- AppBar (propre, transparent) ---
@@ -94,7 +98,7 @@ class AppTheme {
         navigationBarTheme: NavigationBarThemeData(
           backgroundColor: AppColors.surfaceContainerLow,
           elevation: 0,
-          indicatorColor: AppColors.primary.withOpacity(0.12),
+          indicatorColor: AppColors.primary.withValues(alpha: 0.12),
           labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
           labelTextStyle: WidgetStateProperty.resolveWith(
             (states) => states.contains(WidgetState.selected)
@@ -117,7 +121,7 @@ class AppTheme {
         ),
 
         /// --- Cartes ---
-        cardTheme: CardTheme(
+        cardTheme: CardThemeData(
           elevation: 0,
           shape: RoundedRectangleBorder(
               borderRadius:

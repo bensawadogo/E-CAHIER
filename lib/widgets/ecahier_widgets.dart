@@ -1,18 +1,16 @@
 /// Widgets et utilitaires partagés pour l'application Ecahier.
-/// Centralise les éléments récurrents pour un style moderne et épuré.
 library;
 
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+
 import '../theme/app_icons.dart';
 import '../theme/app_theme.dart';
 
 // ---------------------------------------------------------------------------
-// Utilitaires de formatage
+// Utilitaires
 // ---------------------------------------------------------------------------
 
-/// Décoration d'entrée standard "moderne et épuré" (champs de formulaire).
-/// Utilisée par les écrans clients, crédits et paiements.
+/// Décoration d'entrée standard (champs de formulaire).
 InputDecoration modernInputDecoration(
   String label, {
   String? hint,
@@ -40,18 +38,10 @@ InputDecoration modernInputDecoration(
   );
 }
 
-/// Formate un montant en FCFA avec séparateurs de milliers.
-/// Reçoit les centimes (int) et convertit en unités monétaires.
-String formatCurrency(int centimes) {
-  final fcfa = centimes / 100;
-  return NumberFormat.currencyPattern('fr', 'XOF').format(fcfa);
-}
-
 /// Couleur d'avatar déterministe dérivée du nom.
 Color avatarColor(String name) {
-  final seed = name.isNotEmpty
-      ? name.codeUnits.fold<int>(0, (a, b) => a + b)
-      : 0;
+  final seed =
+      name.isNotEmpty ? name.codeUnits.fold<int>(0, (a, b) => a + b) : 0;
   const palette = [
     Color(0xFFB3261E),
     Color(0xFF825500),
@@ -79,7 +69,7 @@ String paymentMethodLabel(String method) {
   }
 }
 
-/// Icône correspondant à la méthode de paiement (jeux d'icônes réels).
+/// Icône correspondant à la méthode de paiement.
 IconData paymentMethodIcon(String method) {
   switch (method) {
     case 'cash':
@@ -96,10 +86,14 @@ IconData paymentMethodIcon(String method) {
 /// Libellé humain pour le statut d'un crédit.
 String creditStatusLabel(String status) {
   switch (status) {
+    case 'pending':
+      return 'En attente';
+    case 'partial':
+      return 'Partiel';
     case 'paid':
       return 'Payé';
-    case 'active':
-      return 'Actif';
+    case 'cancelled':
+      return 'Annulé';
     default:
       return 'Inconnu';
   }
@@ -107,19 +101,98 @@ String creditStatusLabel(String status) {
 
 /// Initiales du nom pour l'avatar circulaire.
 String nameInitials(String name) {
-  final parts = name.trim().split(RegExp(r'\s+'));
+  final parts =
+      name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
   if (parts.isEmpty) return '?';
-  if (parts.length == 1) {
-    return parts[0].isNotEmpty ? parts[0][0] : '?';
-  }
-  return parts[0][0] + parts[parts.length - 1][0];
+  if (parts.length == 1) return parts[0][0].toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+/// Message court en bas d'écran.
+void showSnack(BuildContext context, String message) {
+  ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(content: Text(message)));
 }
 
 // ---------------------------------------------------------------------------
 // Widgets réutilisables
 // ---------------------------------------------------------------------------
 
-/// Carte de statistiques moderne — utilisée sur le dashboard.
+/// Titre d'écran avec sous-titre optionnel.
+class ScreenHeader extends StatelessWidget {
+  final String title;
+  final String? subtitle;
+
+  const ScreenHeader({super.key, required this.title, this.subtitle});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title,
+            style: theme.textTheme.headlineLarge
+                ?.copyWith(fontWeight: FontWeight.w700)),
+        if (subtitle != null) ...[
+          const SizedBox(height: 4),
+          Text(subtitle!,
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+        ],
+      ],
+    );
+  }
+}
+
+/// Avatar rond avec les initiales du client.
+class CustomerAvatar extends StatelessWidget {
+  final String name;
+  final double radius;
+
+  const CustomerAvatar({super.key, required this.name, this.radius = 22});
+
+  @override
+  Widget build(BuildContext context) {
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: avatarColor(name),
+      child: Text(
+        nameInitials(name),
+        style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: radius * 0.75),
+      ),
+    );
+  }
+}
+
+/// Ligne « icône + texte » des fenêtres de détail.
+class InfoRow extends StatelessWidget {
+  final IconData icon;
+  final String text;
+
+  const InfoRow({super.key, required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.onSurfaceVariant;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 10),
+          Expanded(child: Text(text, style: TextStyle(color: color))),
+        ],
+      ),
+    );
+  }
+}
+
+/// Carte de statistiques — utilisée sur le tableau de bord.
 class StatCard extends StatelessWidget {
   final String title;
   final String value;
@@ -139,8 +212,8 @@ class StatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final isDarkOnBg = backgroundColor != null &&
-        backgroundColor!.computeLuminance() < 0.5;
+    final isDarkOnBg =
+        backgroundColor != null && backgroundColor!.computeLuminance() < 0.5;
 
     return Card(
       elevation: 0,
@@ -150,7 +223,7 @@ class StatCard extends StatelessWidget {
         side: BorderSide(
           color: isDarkOnBg
               ? Colors.transparent
-              : colors.outlineVariant.withOpacity(0.5),
+              : colors.outlineVariant.withValues(alpha: 0.5),
         ),
       ),
       child: Padding(
@@ -160,37 +233,47 @@ class StatCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: color.withOpacity(0.12),
+                    color: color.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(icon, color: color, size: 22),
                 ),
-                Text(
-                  title,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: isDarkOnBg
-                            ? Colors.white70
-                            : colors.onSurfaceVariant,
-                        fontWeight: FontWeight.w600,
-                      ),
+                const SizedBox(width: 8),
+                // Texte agrandi sur un petit écran : on tronque le titre au
+                // lieu de déborder.
+                Expanded(
+                  child: Text(
+                    title,
+                    textAlign: TextAlign.end,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: isDarkOnBg
+                              ? Colors.white70
+                              : colors.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
                 ),
-                             ],
+              ],
             ),
             const SizedBox(height: 10),
-            Text(
-              value,
-              style: Theme.of(context)
-                  .textTheme
-                  .headlineMedium
-                  ?.copyWith(
-                    color: isDarkOnBg ? Colors.white : color,
-                    fontWeight: FontWeight.w700,
-                  ),
+            // Un très grand nombre rétrécit plutôt que de déborder.
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                value,
+                maxLines: 1,
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      color: isDarkOnBg ? Colors.white : color,
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
             ),
           ],
         ),
@@ -199,49 +282,101 @@ class StatCard extends StatelessWidget {
   }
 }
 
-/// Badge circulaire coloré pour le statut d'un crédit.
-class StatusBadge extends StatelessWidget {
-  final String label;
-  final Color color;
+/// Ligne de liste (carte) qui supporte les gros textes et les petits écrans.
+///
+/// Un `ListTile` impose une hauteur et une largeur de contenu serrées : avec le
+/// texte agrandi par l'utilisateur, le montant à droite « consomme toute la
+/// largeur » et la mise en page plante. Ici le titre/sous-titre se partagent
+/// la place et peuvent passer sur plusieurs lignes ; la zone de droite est
+/// plafonnée.
+class RecordTile extends StatelessWidget {
+  final Widget leading;
+  final Widget title;
+  final Widget? subtitle;
+  final Widget? trailing;
+  final VoidCallback? onTap;
 
-  const StatusBadge({
+  const RecordTile({
     super.key,
-    required this.label,
-    required this.color,
+    required this.leading,
+    required this.title,
+    this.subtitle,
+    this.trailing,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 12,
-          color: color,
-          fontWeight: FontWeight.w600,
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              leading,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    title,
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 2),
+                      subtitle!,
+                    ],
+                  ],
+                ),
+              ),
+              if (trailing != null) ...[
+                const SizedBox(width: 8),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 132),
+                  child: trailing,
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-/// En-tête de section moderne avec titre et compteur optionnel.
+/// Badge coloré pour le statut d'un crédit.
+class StatusBadge extends StatelessWidget {
+  final String label;
+  final Color color;
+
+  const StatusBadge({super.key, required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style:
+            TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+}
+
+/// En-tête de section avec titre et compteur optionnel.
 class SectionHeader extends StatelessWidget {
   final String title;
   final int? count;
   final IconData? icon;
 
-  const SectionHeader({
-    super.key,
-    required this.title,
-    this.count,
-    this.icon,
-  });
+  const SectionHeader({super.key, required this.title, this.count, this.icon});
 
   @override
   Widget build(BuildContext context) {
@@ -254,20 +389,23 @@ class SectionHeader extends StatelessWidget {
             Icon(icon, color: colors.primary, size: 20),
             const SizedBox(width: 6),
           ],
-          Text(
-            title,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: colors.onSurface.withOpacity(0.7),
-                  fontWeight: FontWeight.w600,
-                ),
+          Flexible(
+            child: Text(
+              title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: colors.onSurface.withValues(alpha: 0.7),
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
           ),
           const SizedBox(width: 8),
           if (count != null)
             Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 8, vertical: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
-                color: colors.primary.withOpacity(0.12),
+                color: colors.primary.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
@@ -285,16 +423,12 @@ class SectionHeader extends StatelessWidget {
   }
 }
 
-/// Message d'état vide moderne.
+/// Message d'état vide.
 class EmptyState extends StatelessWidget {
   final IconData icon;
   final String message;
 
-  const EmptyState({
-    super.key,
-    required this.icon,
-    required this.message,
-  });
+  const EmptyState({super.key, required this.icon, required this.message});
 
   @override
   Widget build(BuildContext context) {
@@ -309,9 +443,10 @@ class EmptyState extends StatelessWidget {
             const SizedBox(height: 16),
             Text(
               message,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: colors.onSurfaceVariant,
-                  ),
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.copyWith(color: colors.onSurfaceVariant),
               textAlign: TextAlign.center,
             ),
           ],
@@ -321,16 +456,12 @@ class EmptyState extends StatelessWidget {
   }
 }
 
-/// Message d'état d'erreur moderne avec bouton de réessai.
+/// Message d'erreur avec bouton de réessai.
 class ErrorState extends StatelessWidget {
   final String message;
   final VoidCallback? onRetry;
 
-  const ErrorState({
-    super.key,
-    required this.message,
-    this.onRetry,
-  });
+  const ErrorState({super.key, required this.message, this.onRetry});
 
   @override
   Widget build(BuildContext context) {
@@ -341,7 +472,7 @@ class ErrorState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.error_outline, size: 56, color: colors.error),
+            Icon(AppIcons.warning, size: 56, color: colors.error),
             const SizedBox(height: 16),
             Text(
               message,
@@ -355,7 +486,7 @@ class ErrorState extends StatelessWidget {
               const SizedBox(height: 16),
               FilledButton.icon(
                 onPressed: onRetry,
-                icon: const Icon(Icons.refresh, size: 18),
+                icon: const Icon(AppIcons.sync, size: 18),
                 label: const Text('Réessayer'),
               ),
             ],
@@ -365,4 +496,3 @@ class ErrorState extends StatelessWidget {
     );
   }
 }
-

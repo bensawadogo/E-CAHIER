@@ -1,35 +1,43 @@
+import '../utils/parsing.dart';
+
 class Payment {
   final String id;
   final String customerId;
-  final int amountCentimes;
+
+  /// Crédit remboursé par ce paiement (obligatoire côté serveur).
+  final String creditId;
+
+  /// Montant en FCFA.
+  final int amount;
   final String method;
   final DateTime createdAt;
 
-  Payment({
+  const Payment({
     required this.id,
     required this.customerId,
-    required this.amountCentimes,
+    required this.creditId,
+    required this.amount,
     this.method = 'cash',
     required this.createdAt,
   });
 
   factory Payment.fromJson(Map<String, dynamic> json) {
     return Payment(
-      id: json['id'] ?? '',
-      customerId: json['customer_id'] ?? '',
-      amountCentimes: ((json['amount'] ?? 0) as num).toInt(),
-      method: json['method'] ?? 'cash',
-      createdAt: DateTime.parse(json['created_at'] ?? DateTime.now().toIso8601String()),
+      id: json['id'] as String? ?? '',
+      customerId: json['customer_id'] as String? ?? '',
+      creditId: json['credit_id'] as String? ?? '',
+      amount: parseAmount(json['amount']),
+      method: json['method'] as String? ?? 'cash',
+      createdAt: parseServerDate(json['payment_date'] ?? json['created_at']),
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'customer_id': customerId,
-      'amount': amountCentimes,
-      'method': method,
-      'created_at': createdAt.toIso8601String(),
-    };
-  }
+  /// Corps de la requête de création (`POST /api/payments/`).
+  Map<String, dynamic> toApiJson() => {
+        'id': id,
+        'customer_id': customerId,
+        'credit_id': creditId,
+        'amount': amount,
+        'method': method,
+      };
 }

@@ -1,45 +1,41 @@
 /// Centralise les icônes de l'application Ecahier.
 ///
-/// On utilise des JEUX D'ICÔNES RÉELS et open source (pas de glyphes générés
-/// par IA) :
-///   - **Lucide** (lucide.dev) : lignes nettes et cohérentes pour l'UI.
-///   - **Font Awesome** (fontawesome.com) : compléments (paiement, marques).
-///
-/// Centraliser ici permet de garder une correspondance cohérente et
-/// facile à maintenir.
+/// Icônes Material livrées avec Flutter : aucun paquet d'icônes supplémentaire
+/// (l'ancien `lucide_icons` ne compile plus avec Flutter 3.47, et chaque
+/// paquet alourdit l'APK sur des téléphones modestes). Les glyphes inutilisés
+/// sont retirés automatiquement du build release.
 library;
 
 import 'package:flutter/material.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:lucide_icons/lucide_icons.dart';
 
-/// Icônes d'écran / navigation (Lucide).
 class AppIcons {
   // --- Navigation ---
-  static const IconData dashboard = LucideIcons.layoutDashboard;
-  static const IconData customers = LucideIcons.users;
-  static const IconData credits = LucideIcons.creditCard;
-  static const IconData payments = LucideIcons.wallet;
-  static const IconData sync = LucideIcons.refreshCw;
+  static const IconData dashboard = Icons.dashboard_outlined;
+  static const IconData customers = Icons.people_outline;
+  static const IconData credits = Icons.receipt_long_outlined;
+  static const IconData payments = Icons.account_balance_wallet_outlined;
+  static const IconData sync = Icons.sync;
 
   // --- Formulaires / actions ---
-  static const IconData add = LucideIcons.plus;
-  static const IconData search = LucideIcons.search;
-  static const IconData user = LucideIcons.user;
-  static const IconData phone = LucideIcons.phone;
-  static const IconData place = LucideIcons.mapPin;
-  static const IconData calendar = LucideIcons.calendar;
-  static const IconData info = LucideIcons.info;
-  static const IconData money = LucideIcons.banknote;
-  static const IconData pause = LucideIcons.pause;
+  static const IconData add = Icons.add;
+  static const IconData search = Icons.search;
+  static const IconData user = Icons.person_outline;
+  static const IconData phone = Icons.phone_outlined;
+  static const IconData place = Icons.place_outlined;
+  static const IconData calendar = Icons.calendar_today_outlined;
+  static const IconData info = Icons.info_outline;
+  static const IconData money = Icons.payments_outlined;
+  static const IconData pause = Icons.pause_circle_outline;
+  static const IconData note = Icons.notes;
 
   // --- Statuts / alertes ---
-  static const IconData warning = LucideIcons.alertTriangle;
-  static const IconData checkCircle = LucideIcons.checkCircle;
+  static const IconData warning = Icons.warning_amber_rounded;
+  static const IconData checkCircle = Icons.check_circle_outline;
+  static const IconData cloudOff = Icons.cloud_off_outlined;
 
-  // --- Méthodes de paiement (Font Awesome fait le lien avec le réel) ---
-  static const IconData cash = FontAwesomeIcons.coins; // espèces
-  static const IconData mobileMoney = FontAwesomeIcons.mobileScreenButton; // mobile money
-  static const IconData bankTransfer = FontAwesomeIcons.buildingColumns; // virement
-  static const IconData other = FontAwesomeIcons.creditCard; // autre / carte
+  // --- Méthodes de paiement ---
+  static const IconData cash = Icons.money;
+  static const IconData mobileMoney = Icons.smartphone;
+  static const IconData bankTransfer = Icons.account_balance_outlined;
+  static const IconData other = Icons.more_horiz;
 }

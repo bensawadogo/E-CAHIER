@@ -1,88 +1,45 @@
 import 'package:sqflite/sqflite.dart';
+
 import '../models/credit.dart';
+import '../utils/parsing.dart';
+import 'base_dao.dart';
 import 'database.dart';
 
-/// Data Access Object for Credit.
-class CreditDao {
-  Future<Database> get _db => DatabaseHelper.instance.database;
+class CreditDao extends BaseDao<Credit> {
+  @override
+  String get tableName => 'credits';
 
-  static const String tableName = 'credits';
+  @override
+  String get defaultOrder => 'created_at DESC';
 
-  Future<List<Credit>> getAll() async {
-    final db = await _db;
-    final List<Map<String, dynamic>> maps = await db.query(
-      tableName,
-      orderBy: 'created_at DESC',
-    );
-    return maps.map((map) => _fromMap(map)).toList();
+  Future<void> updateStatus(String id, String status,
+      {DatabaseExecutor? executor}) async {
+    final db = executor ?? await DatabaseHelper.instance.database;
+    await db.update(tableName, {'status': status},
+        where: 'id = ?', whereArgs: [id]);
   }
 
-  Future<List<Credit>> getByCustomerId(String customerId) async {
-    final db = await _db;
-    final List<Map<String, dynamic>> maps = await db.query(
-      tableName,
-      where: 'customer_id = ?',
-      whereArgs: [customerId],
-      orderBy: 'created_at DESC',
-    );
-    return maps.map((map) => _fromMap(map)).toList();
-  }
+  @override
+  Map<String, Object?> toMap(Credit c) => {
+        'id': c.id,
+        'customer_id': c.customerId,
+        'amount': c.amount,
+        'description': c.description,
+        'status': c.status,
+        'due_date': c.dueDate?.toUtc().toIso8601String(),
+        'created_at': c.createdAt.toUtc().toIso8601String(),
+      };
 
-  Future<Credit?> getById(String id) async {
-    final db = await _db;
-    final List<Map<String, dynamic>> maps = await db.query(
-      tableName,
-      where: 'id = ?',
-      whereArgs: [id],
-    );
-    if (maps.isEmpty) return null;
-    return _fromMap(maps.first);
-  }
-
-  Future<int> insert(Credit credit) async {
-    final db = await _db;
-    return db.insert(
-      tableName,
-      _toMap(credit),
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-  }
-
-  Future<int> upsert(Credit credit) async {
-    final db = await _db;
-    return db.insert(
-      tableName,
-      _toMap(credit),
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-  }
-
-  Future<int> delete(String id) async {
-    final db = await _db;
-    return db.delete(tableName, where: 'id = ?', whereArgs: [id]);
-  }
-
-  Map<String, dynamic> _toMap(Credit c) {
-    return {
-      'id': c.id,
-      'customer_id': c.customerId,
-      'amount': c.amountCentimes,
-      'status': c.status,
-      'due_date': c.dueDate?.toIso8601String(),
-      'created_at': c.createdAt.toIso8601String(),
-    };
-  }
-
-  Credit _fromMap(Map<String, dynamic> map) {
-    return Credit(
-      id: map['id'],
-      customerId: map['customer_id'],
-      amountCentimes: (map['amount'] as int?) ?? 0,
-      status: map['status'] ?? 'active',
-      dueDate: map['due_date'] != null
-          ? DateTime.parse(map['due_date'])
-          : null,
-      createdAt: DateTime.parse(map['created_at']),
-    );
-  }
+  @override
+  Credit fromMap(Map<String, Object?> map) => Credit(
+        id: map['id'] as String,
+        customerId: map['customer_id'] as String,
+        amount: map['amount'] as int? ?? 0,
+        description: map['description'] as String? ?? '',
+        status: map['status'] as String? ?? CreditStatus.pending,
+        dueDate: map['due_date'] != null
+            ? parseServerDate(map['due_date'])
+            : null,
+        createdAt: parseServerDate(map['created_at']),
+      );
 }
