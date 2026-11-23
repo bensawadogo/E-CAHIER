@@ -9,6 +9,11 @@ from pydantic import BaseModel, Field, validator
 
 class CreateCreditRequest(BaseModel):
     """DTO pour la création d'un crédit."""
+    id: Optional[str] = Field(
+        None,
+        pattern=r"^[A-Za-z0-9_-]{1,64}$",
+        description="ID généré par l'app (UUID) : rend la création idempotente",
+    )
     customer_id: str = Field(..., description="ID du client")
     amount: Decimal = Field(..., gt=0, description="Montant du crédit en FCFA")
     description: str = Field(default="", max_length=500, description="Description")

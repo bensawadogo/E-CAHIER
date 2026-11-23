@@ -23,13 +23,23 @@ class CustomerService:
         self.customer_repository = customer_repository
 
     def create_customer(self, request: CreateCustomerRequest) -> Customer:
-        """Crée un nouveau client."""
+        """Crée un nouveau client (idempotent si ``request.id`` est déjà connu).
+
+        L'app mobile génère l'ID hors ligne ; si elle renvoie la même requête
+        après une coupure, on renvoie le client existant au lieu d'un doublon.
+        """
+        if request.id:
+            existing = self.customer_repository.get_by_id(request.id)
+            if existing:
+                return existing
+        extra = {"id": request.id} if request.id else {}
         customer = Customer(
             name=request.name,
             phone=request.phone,
             address=request.address,
             notes=request.notes,
             photo_path=request.photo_path,
+            **extra,
         )
         saved = self.customer_repository.add(customer)
         # NOTE: ne pas logger le nom (PII) — l'ID suffit pour la traçabilité.
@@ -44,6 +54,7 @@ class CustomerService:
         self,
         offset: int = 0,
         limit: Optional[int] = None,
+        updated_since: Optional[str] = None,
     ) -> Tuple[List[Customer], int]:
         """
         Récupère tous les clients (paginé).
@@ -51,8 +62,13 @@ class CustomerService:
         Returns:
             Tuple (liste paginée, total).
         """
-        customers = self.customer_repository.get_all(offset=offset, limit=limit)
-        total = self.customer_repository.count_all()
+        # Le paramètre n'est transmis que s'il est utilisé : les dépôts qui ne
+        # gèrent pas la lecture incrémentale restent compatibles.
+        extra = {"updated_since": updated_since} if updated_since else {}
+        customers = self.customer_repository.get_all(
+            offset=offset, limit=limit, **extra
+        )
+        total = self.customer_repository.count_all(**extra)
         return customers, total
 
     def get_active_customers(

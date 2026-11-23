@@ -20,15 +20,21 @@ from starlette.responses import JSONResponse
 from backend.app.config import settings
 
 
+# Préfixes protégés. `/status/` expose l'historique git : il n'est plus public
+# (le proxy du tableau de bord web ajoute déjà le jeton). `/health` reste
+# ouvert : les hébergeurs (Render) l'appellent sans jeton.
+PROTECTED_PREFIXES = ("/api/", "/status/")
+
+
 class AuthMiddleware(BaseHTTPMiddleware):
-    """Middleware qui exige un token Bearer statique pour accéder aux routes `/api/*`."""
+    """Middleware qui exige un token Bearer statique pour `/api/*` et `/status/*`."""
 
     def __init__(self, app, auth_token: Optional[str] = None):
         super().__init__(app)
         self.auth_token = auth_token if auth_token is not None else settings.AUTH_TOKEN
 
     async def dispatch(self, request: Request, call_next):
-        if self.auth_token and request.url.path.startswith("/api/"):
+        if self.auth_token and request.url.path.startswith(PROTECTED_PREFIXES):
             expected = f"Bearer {self.auth_token}"
             # compare_digest : comparaison à temps constant (anti timing-attack)
             if not hmac.compare_digest(

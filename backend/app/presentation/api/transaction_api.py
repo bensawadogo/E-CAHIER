@@ -4,9 +4,9 @@ Endpoints REST pour la lecture du journal des opérations.
 """
 
 import logging
-from typing import List, Optional
+from typing import List
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from backend.app.application.dto.transaction_dto import (
     TransactionResponse,
@@ -14,23 +14,12 @@ from backend.app.application.dto.transaction_dto import (
 )
 from backend.app.application.services.transaction_service import TransactionService
 
+from backend.app.presentation.dependencies import service_getter
+
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
 
-_transaction_service: Optional[TransactionService] = None
-
-
-def set_transaction_service(service: TransactionService) -> None:
-    """Injecte le service des transactions (appelé au démarrage de l'app)."""
-    global _transaction_service
-    _transaction_service = service
-
-
-def get_transaction_service() -> TransactionService:
-    """Retourne le service des transactions injecté."""
-    if _transaction_service is None:
-        raise RuntimeError("TransactionService non initialisé.")
-    return _transaction_service
+get_transaction_service = service_getter("transaction_service", "TransactionService")
 
 
 def _to_response(t) -> TransactionResponse:
@@ -52,9 +41,9 @@ def _to_response(t) -> TransactionResponse:
 def list_transactions(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
+    service: TransactionService = Depends(get_transaction_service),
 ):
     """Liste toutes les transactions (journal global) avec pagination."""
-    service = get_transaction_service()
     offset = (page - 1) * page_size
     transactions, total = service.get_all_transactions(offset=offset, limit=page_size)
     return TransactionListResponse(
@@ -66,8 +55,10 @@ def list_transactions(
 
 
 @router.get("/customer/{customer_id}", response_model=List[TransactionResponse])
-def get_customer_transactions(customer_id: str):
+def get_customer_transactions(
+    customer_id: str,
+    service: TransactionService = Depends(get_transaction_service),
+):
     """Retourne l'historique complet des opérations d'un client."""
-    service = get_transaction_service()
     transactions = service.get_customer_transactions(customer_id)
     return [_to_response(t) for t in transactions]

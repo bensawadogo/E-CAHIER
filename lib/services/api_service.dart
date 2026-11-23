@@ -1,184 +1,209 @@
 import 'dart:async';
 import 'dart:convert';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
-import '../models/customer.dart';
+
 import '../models/credit.dart';
+import '../models/customer.dart';
 import '../models/payment.dart';
 
-// Duration maximale d'une requête HTTP.
-const Duration _defaultTimeout = Duration(seconds: 12);
+/// Durée maximale d'une requête. Courte : sur une connexion faible, mieux
+/// vaut échouer vite et réessayer plus tard que bloquer la file d'envoi.
+const Duration _defaultTimeout = Duration(seconds: 10);
 
-// Nombre maximal de tentatives en cas d'erreur (5xx, 429, timeout).
-const int _maxRetries = 3;
+/// Nombre de tentatives en cas d'erreur réseau, 5xx ou 429.
+/// Sans danger pour les POST : les ids sont générés par l'app et le serveur
+/// ignore un renvoi (création idempotente).
+const int _maxAttempts = 2;
 
-// --- Production : lancer avec --dart-define=CAHIER_API_BASE_URL=https://mon-serveur/api
+/// Taille des pages lues au serveur (petites pages = peu de données perdues
+/// si la connexion saute).
+const int _pageSize = 100;
+
+// --- Production : lancer avec
+//   --dart-define=CAHIER_API_BASE_URL=https://mon-serveur/api
+//   --dart-define=CAHIER_AUTH_TOKEN=<même valeur que CAHIER_AUTH_TOKEN du serveur>
 const String _envApiBaseUrl = String.fromEnvironment('CAHIER_API_BASE_URL');
+const String _envAuthToken = String.fromEnvironment('CAHIER_AUTH_TOKEN');
+
+/// Réponse HTTP en erreur.
+class ApiException implements Exception {
+  final int statusCode;
+  final String message;
+
+  const ApiException(this.statusCode, this.message);
+
+  /// Jeton absent ou refusé : inutile de continuer, rien ne passera.
+  bool get isAuthError => statusCode == 401 || statusCode == 403;
+
+  /// Le serveur refuse la donnée elle-même (400, 404, 409, 422...). La
+  /// renvoyer telle quelle échouera toujours : il ne faut pas boucler.
+  /// 408 et 429 sont temporaires, donc exclus.
+  bool get isPermanent =>
+      statusCode >= 400 &&
+      statusCode < 500 &&
+      !isAuthError &&
+      statusCode != 408 &&
+      statusCode != 429;
+
+  @override
+  String toString() => 'HTTP $statusCode : $message';
+}
 
 class ApiService {
-  /// URL de base de l'API. En Web (Flutter build web), si une URL explicite
-  /// est fournie au build (--dart-define), elle est prioritaire ; sinon on
-  /// utilise l'origine du document courant pour éviter les problèmes CORS.
+  /// URL de base de l'API. En Web, si aucune URL n'est fournie au build, on
+  /// utilise l'origine du document courant (pas de souci CORS).
   static String get baseUrl {
-    if (_envApiBaseUrl.isNotEmpty) {
-      return _envApiBaseUrl;
-    }
-    if (kIsWeb) {
-      final origin = Uri.base.origin; // ex: http://localhost:8000
-      return '$origin/api';
-    }
+    if (_envApiBaseUrl.isNotEmpty) return _envApiBaseUrl;
+    if (kIsWeb) return '${Uri.base.origin}/api';
     return 'http://10.0.2.2:8000/api';
   }
 
   final http.Client _client;
+  final String _baseUrl;
+  final String _authToken;
+  final Duration _retryDelay;
+  final Duration _timeout;
 
-  ApiService([http.Client? client]) : _client = client ?? http.Client();
-
-  /// Enveloppe HTTP publique avec timeout et retries exponentiels.
-  /// Retry sur les erreurs serveur (5xx), 429 Too Many Requests, et timeouts.
-  Future<http.Response> request(
-    String method,
-    String url, {
-    Map<String, String>? headers,
-    Object? body,
+  ApiService({
+    http.Client? client,
+    String? baseUrl,
+    String? authToken,
+    Duration retryDelay = const Duration(seconds: 1),
     Duration timeout = _defaultTimeout,
+  })  : _client = client ?? http.Client(),
+        _baseUrl = baseUrl ?? ApiService.baseUrl,
+        _authToken = authToken ?? _envAuthToken,
+        _retryDelay = retryDelay,
+        _timeout = timeout;
+
+  Map<String, String> get _headers => {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        if (_authToken.isNotEmpty) 'Authorization': 'Bearer $_authToken',
+      };
+
+  /// Envoie une requête, avec timeout court et une nouvelle tentative sur
+  /// les erreurs temporaires. Lève [ApiException] si le serveur répond par un
+  /// code d'erreur, ou l'erreur réseau d'origine si aucune réponse n'arrive.
+  Future<http.Response> _send(
+    String method,
+    String path, {
+    Object? body,
+    Duration? timeout,
   }) async {
-    final uri = Uri.parse(url);
-    int attempt = 0;
+    timeout ??= _timeout;
+    final uri = Uri.parse('$_baseUrl$path');
     Object? lastError;
 
-    while (attempt < _maxRetries) {
+    for (var attempt = 1; attempt <= _maxAttempts; attempt++) {
       try {
-        final response = await _httpMethod(method, uri, headers, body)
-            .timeout(timeout);
+        final http.Response response;
+        if (method == 'GET') {
+          response =
+              await _client.get(uri, headers: _headers).timeout(timeout);
+        } else {
+          response = await _client
+              .post(uri, headers: _headers, body: json.encode(body))
+              .timeout(timeout);
+        }
 
-        if (_shouldRetry(response.statusCode)) {
-          lastError = Exception(
-              'Retryable status ${response.statusCode}');
-          attempt++;
-          if (attempt < _maxRetries) {
-            await _backoff(attempt);
-          }
-          continue;
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          return response;
         }
-        return response;
-      } on TimeoutException catch (e) {
-        lastError = e;
-        attempt++;
-        if (attempt < _maxRetries) {
-          await _backoff(attempt);
-        }
+        final error = ApiException(response.statusCode, _detail(response));
+        if (error.isAuthError || error.isPermanent) throw error;
+        lastError = error; // 5xx, 429, 408 : on retente
+      } on ApiException {
+        rethrow;
       } catch (e) {
-        lastError = e;
-        attempt++;
-        if (attempt < _maxRetries) {
-          await _backoff(attempt);
-        }
+        lastError = e; // timeout, coupure réseau
+      }
+      if (attempt < _maxAttempts) {
+        await Future<void>.delayed(_retryDelay * attempt);
       }
     }
-
-    throw lastError ?? Exception('Max retries exceeded');
+    throw lastError ?? StateError('Requête impossible');
   }
 
-  Future<http.Response> _httpMethod(
-    String method,
-    Uri uri,
-    Map<String, String>? headers,
-    Object? body,
-  ) {
-    final h = headers ?? {'Content-Type': 'application/json'};
-    final encodedBody = body is Map<String, dynamic>
-        ? json.encode(body)
-        : body is String
-            ? body
-            : null;
+  /// Message d'erreur du serveur (`{"detail": ...}`) sans planter si le
+  /// corps n'est pas du JSON.
+  String _detail(http.Response response) {
+    try {
+      final decoded = json.decode(utf8.decode(response.bodyBytes));
+      if (decoded is Map && decoded['detail'] != null) {
+        return decoded['detail'].toString();
+      }
+    } catch (_) {}
+    return response.reasonPhrase ?? 'Erreur';
+  }
 
-    switch (method) {
-      case 'GET':
-        return _client.get(uri, headers: h);
-      case 'POST':
-        return _client.post(uri, headers: h, body: encodedBody);
-      case 'PUT':
-        return _client.put(uri, headers: h, body: encodedBody);
-      case 'DELETE':
-        return _client.delete(uri, headers: h, body: encodedBody);
-      default:
-        throw UnsupportedError('Unsupported HTTP method: $method');
+  /// Envoie une création (`POST /customers/`, `/credits/`, `/payments/`).
+  Future<void> post(String resource, Map<String, dynamic> body) async {
+    await _send('POST', '/$resource/', body: body);
+  }
+
+  /// Lit les pages d'une ressource. Le serveur renvoie
+  /// `{<clé>: [...], total, page, page_size}`, pas une liste nue.
+  ///
+  /// Avec [updatedSince] (lecture incrémentale), seuls les enregistrements
+  /// modifiés depuis cette date reviennent, triés par date de modification.
+  Future<Pulled<T>> _getAll<T>(
+    String resource,
+    T Function(Map<String, dynamic>) parse, {
+    String? updatedSince,
+  }) async {
+    final since = updatedSince == null
+        ? ''
+        : '&updated_since=${Uri.encodeQueryComponent(updatedSince)}';
+    final items = <T>[];
+    final seenIds = <Object?>{};
+    String? newest;
+    var consistent = true;
+    var page = 1;
+    while (true) {
+      final response = await _send(
+          'GET', '/$resource/?page=$page&page_size=$_pageSize$since');
+      final decoded = json.decode(utf8.decode(response.bodyBytes));
+      final rows = (decoded is Map ? decoded[resource] : decoded) as List?;
+      if (rows == null || rows.isEmpty) break;
+      for (final row in rows.cast<Map<String, dynamic>>()) {
+        // Un id vu deux fois = un enregistrement modifié PENDANT le
+        // téléchargement : il a changé de place dans le tri et un voisin a pu
+        // être sauté. On garde les données mais on n'avance pas le curseur :
+        // le prochain téléchargement rattrape tout.
+        if (!seenIds.add(row['id'])) consistent = false;
+        final changed = row['updated_at'];
+        if (changed is String && (newest == null || changed.compareTo(newest) > 0)) {
+          newest = changed;
+        }
+        items.add(parse(row));
+      }
+      final total = decoded is Map ? decoded['total'] as int? : null;
+      if (total == null || items.length >= total || rows.length < _pageSize) {
+        break;
+      }
+      page++;
+      if (page > 500) break; // garde-fou contre une boucle infinie
     }
+    return Pulled(items, consistent ? newest : null);
   }
 
-  /// Détermine si le code de statut HTTP nécessite une nouvelle tentative.
-  bool _shouldRetry(int statusCode) {
-    return statusCode == 429 ||
-        (statusCode >= 500 && statusCode < 600);
-  }
+  Future<Pulled<Customer>> getCustomers({String? updatedSince}) =>
+      _getAll('customers', Customer.fromJson, updatedSince: updatedSince);
 
-  /// Backoff exponentiel : 2s, 4s entre les tentatives.
-  Future<void> _backoff(int attempt) {
-    final delay = Duration(seconds: 2 * attempt);
-    return Future.delayed(delay);
-  }
+  Future<Pulled<Credit>> getCredits({String? updatedSince}) =>
+      _getAll('credits', Credit.fromJson, updatedSince: updatedSince);
 
-  Future<List<Customer>> getCustomers() async {
-    final response = await request('GET', '$baseUrl/customers/');
-    if (response.statusCode == 200) {
-      List<dynamic> data = json.decode(response.body);
-      return data.map((json) => Customer.fromJson(json)).toList();
-    }
-    throw Exception('Failed to load customers');
-  }
+  Future<Pulled<Payment>> getPayments({String? updatedSince}) =>
+      _getAll('payments', Payment.fromJson, updatedSince: updatedSince);
+}
 
-  Future<List<Credit>> getCredits() async {
-    final response = await request('GET', '$baseUrl/credits/');
-    if (response.statusCode == 200) {
-      List<dynamic> data = json.decode(response.body);
-      return data.map((json) => Credit.fromJson(json)).toList();
-    }
-    throw Exception('Failed to load credits');
-  }
-
-  Future<List<Payment>> getPayments() async {
-    final response = await request('GET', '$baseUrl/payments/');
-    if (response.statusCode == 200) {
-      List<dynamic> data = json.decode(response.body);
-      return data.map((json) => Payment.fromJson(json)).toList();
-    }
-    throw Exception('Failed to load payments');
-  }
-
-  Future<Customer> createCustomer(Customer customer) async {
-    final response = await request(
-      'POST',
-      '$baseUrl/customers/',
-      body: customer.toJson(),
-    );
-    if (response.statusCode == 200 || response.statusCode == 201) {
-      return Customer.fromJson(json.decode(response.body));
-    }
-    throw Exception('Failed to create customer');
-  }
-
-  Future<Credit> createCredit(Credit credit) async {
-    final response = await request(
-      'POST',
-      '$baseUrl/credits/',
-      body: credit.toJson(),
-    );
-    if (response.statusCode == 200 || response.statusCode == 201) {
-      return Credit.fromJson(json.decode(response.body));
-    }
-    throw Exception('Failed to create credit');
-  }
-
-  Future<Payment> createPayment(Payment payment) async {
-    final response = await request(
-      'POST',
-      '$baseUrl/payments/',
-      body: payment.toJson(),
-    );
-    if (response.statusCode == 200 || response.statusCode == 201) {
-      return Payment.fromJson(json.decode(response.body));
-    }
-    throw Exception('Failed to create payment');
-  }
+/// Résultat d'un téléchargement : les éléments et le nouveau curseur (la plus
+/// récente date de modification vue), ou `null` s'il ne faut pas l'avancer.
+class Pulled<T> {
+  final List<T> items;
+  final String? cursor;
+  const Pulled(this.items, this.cursor);
 }

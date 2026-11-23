@@ -210,11 +210,6 @@ def client(in_memory_db, pii_encryptor):
     )
     from backend.app.infrastructure.sync.sync_queue import SyncQueue
     from backend.app.infrastructure.sync.sync_service import SyncService
-    from backend.app.presentation.api.credit_api import set_credit_service
-    from backend.app.presentation.api.customer_api import set_customer_service
-    from backend.app.presentation.api.payment_api import set_payment_service
-    from backend.app.presentation.api.sync_api import set_sync_service
-    from backend.app.presentation.api.transaction_api import set_transaction_service
 
     customer_repo = SQLiteCustomerRepository(in_memory_db, pii_encryptor)
     credit_repo = SQLiteCreditRepository(in_memory_db)
@@ -231,18 +226,19 @@ def client(in_memory_db, pii_encryptor):
         base_delay=0.01,
     )
 
-    set_customer_service(CustomerService(customer_repo))
+    state = main_module.app.state
+    state.customer_service = CustomerService(customer_repo)
     # Miroir du câblage production (main.py) : le journal reçoit les crédits.
-    set_credit_service(CreditService(credit_repo, customer_repo, transaction_repo))
-    set_payment_service(
-        PaymentService(payment_repo, credit_repo, customer_repo, transaction_repo)
+    state.credit_service = CreditService(
+        credit_repo, customer_repo, transaction_repo, payment_repository=payment_repo
     )
-    set_sync_service(sync_service)
+    state.payment_service = PaymentService(
+        payment_repo, credit_repo, customer_repo, transaction_repo
+    )
+    state.sync_service = sync_service
     # Le service transactions doit pointer sur la MÊME base en mémoire
     # (sinon /api/transactions lit la base fichier définie au démarrage).
-    set_transaction_service(TransactionService(transaction_repo))
-    # /health reads this module-level global.
-    main_module.sync_service = sync_service
+    state.transaction_service = TransactionService(transaction_repo)
 
     with TestClient(
         main_module.app,

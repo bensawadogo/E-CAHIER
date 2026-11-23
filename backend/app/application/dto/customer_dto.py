@@ -9,6 +9,11 @@ from pydantic import BaseModel, Field, validator
 
 class CreateCustomerRequest(BaseModel):
     """DTO pour la création d'un client."""
+    id: Optional[str] = Field(
+        None,
+        pattern=r"^[A-Za-z0-9_-]{1,64}$",
+        description="ID généré par l'app (UUID) : rend la création idempotente",
+    )
     name: str = Field(..., min_length=1, max_length=200, description="Nom du client")
     phone: str = Field(default="", max_length=20, description="Téléphone")
     address: str = Field(default="", max_length=500, description="Adresse")

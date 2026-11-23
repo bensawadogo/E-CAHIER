@@ -10,6 +10,7 @@ Optimisations pour le contexte Burkina Faso :
 
 import logging
 import sqlite3
+import threading
 from contextlib import contextmanager
 from typing import Optional
 
@@ -24,6 +25,18 @@ class SQLiteConnectionManager:
         self._connection: Optional[sqlite3.Connection] = None
         self._transaction_depth = 0
         self._transaction_connection: Optional[sqlite3.Connection] = None
+        # Connexion dédiée aux transactions, réutilisée (ouvrir une connexion
+        # + 7 PRAGMA à chaque requête coûte cher sur un petit VPS).
+        self._tx_conn_cache: Optional[sqlite3.Connection] = None
+        # Une seule transaction à la fois, TOUS threads confondus : FastAPI
+        # exécute les routes synchrones dans un pool de threads. Sans ce
+        # verrou, un 2e thread « imbriquait » sa transaction dans celle du 1er
+        # (commit/rollback mélangés). RLock : le MÊME thread peut imbriquer.
+        self._tx_lock = threading.RLock()
+        # La connexion par défaut est partagée par tous les threads de FastAPI.
+        # Un objet sqlite3.Connection ne supporte pas l'usage simultané de
+        # plusieurs curseurs (InterfaceError / SystemError) : on le protège.
+        self._conn_lock = threading.RLock()
 
     def _connect(self) -> sqlite3.Connection:
         """Ouvre une nouvelle connexion à la base de données SQLite.
@@ -63,6 +76,9 @@ class SQLiteConnectionManager:
             self._connection.close()
             self._connection = None
             logger.info("Connexion SQLite fermée: %s", self.db_path)
+        if self._tx_conn_cache:
+            self._tx_conn_cache.close()
+            self._tx_conn_cache = None
 
     @contextmanager
     def cursor(self, conn: Optional[sqlite3.Connection] = None):
@@ -78,29 +94,31 @@ class SQLiteConnectionManager:
             finally:
                 cur.close()
         else:
-            conn = self.get_connection()
-            cur = conn.cursor()
-            try:
-                yield cur
-                conn.commit()
-            except Exception:
-                conn.rollback()
-                logger.error("Erreur transaction SQLite, rollback effectué", exc_info=True)
-                raise
-            finally:
-                cur.close()
+            with self._conn_lock:
+                conn = self.get_connection()
+                cur = conn.cursor()
+                try:
+                    yield cur
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                    logger.error("Erreur transaction SQLite, rollback effectué", exc_info=True)
+                    raise
+                finally:
+                    cur.close()
 
     @contextmanager
     def connection(self):
         """Fournit la connexion directement via un context manager (pour DDL)."""
-        conn = self.get_connection()
-        try:
-            yield conn
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            logger.error("Erreur connexion SQLite, rollback effectué", exc_info=True)
-            raise
+        with self._conn_lock:
+            conn = self.get_connection()
+            try:
+                yield conn
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                logger.error("Erreur connexion SQLite, rollback effectué", exc_info=True)
+                raise
 
     @contextmanager
     def transaction(self):
@@ -116,34 +134,39 @@ class SQLiteConnectionManager:
                 repo1.add(entity, conn=conn)
                 repo2.update(entity, conn=conn)
         """
-        if self._transaction_depth == 0:
-            # Transaction externe : nouvelle connexion dédiée ou réutilisation
-            if self._transaction_connection is None:
-                self._transaction_connection = self._connect()
-            conn = self._transaction_connection
-            conn.execute("BEGIN IMMEDIATE;")
-        else:
-            # Transaction imbriquée : réutilise la connexion existante
-            conn = self._transaction_connection
-            if conn is None:
-                raise RuntimeError("Transaction connection lost")
-            conn.execute("SAVEPOINT sp_%d;" % self._transaction_depth)
-        
-        self._transaction_depth += 1
-        
-        try:
-            yield conn
-            if self._transaction_depth == 1:
-                conn.commit()
-                logger.debug("Transaction committed")
-        except Exception:
-            if self._transaction_depth == 1:
-                conn.rollback()
-                logger.error("Transaction rolled back", exc_info=True)
-            else:
-                conn.execute("ROLLBACK TO SAVEPOINT sp_%d;" % (self._transaction_depth - 1))
-            raise
-        finally:
-            self._transaction_depth -= 1
+        with self._tx_lock:
             if self._transaction_depth == 0:
-                self._transaction_connection = None
+                # Transaction externe : connexion dédiée (créée une seule fois).
+                if self._tx_conn_cache is None:
+                    self._tx_conn_cache = self._connect()
+                self._transaction_connection = self._tx_conn_cache
+                conn = self._transaction_connection
+                conn.execute("BEGIN IMMEDIATE;")
+            else:
+                # Transaction imbriquée (même thread) : même connexion.
+                conn = self._transaction_connection
+                if conn is None:
+                    raise RuntimeError("Transaction connection lost")
+                conn.execute("SAVEPOINT sp_%d;" % self._transaction_depth)
+
+            self._transaction_depth += 1
+
+            try:
+                yield conn
+                if self._transaction_depth == 1:
+                    conn.commit()
+                    logger.debug("Transaction committed")
+                else:
+                    conn.execute("RELEASE SAVEPOINT sp_%d;" % (self._transaction_depth - 1))
+            except Exception:
+                if self._transaction_depth == 1:
+                    conn.rollback()
+                    logger.error("Transaction rolled back", exc_info=True)
+                else:
+                    conn.execute("ROLLBACK TO SAVEPOINT sp_%d;" % (self._transaction_depth - 1))
+                    conn.execute("RELEASE SAVEPOINT sp_%d;" % (self._transaction_depth - 1))
+                raise
+            finally:
+                self._transaction_depth -= 1
+                if self._transaction_depth == 0:
+                    self._transaction_connection = None

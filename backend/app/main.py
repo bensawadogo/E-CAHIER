@@ -17,7 +17,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Query, Request
 from fastapi.staticfiles import StaticFiles
 
 from backend.app.config import settings, setup_logging
@@ -39,11 +39,6 @@ from backend.app.presentation.api import (
     sync_router,
     transaction_router,
 )
-from backend.app.presentation.api.customer_api import set_customer_service
-from backend.app.presentation.api.credit_api import set_credit_service
-from backend.app.presentation.api.payment_api import set_payment_service
-from backend.app.presentation.api.sync_api import set_sync_service
-from backend.app.presentation.api.transaction_api import set_transaction_service
 from backend.app.presentation.middleware import setup_middleware, AuthMiddleware
 
 # Configuration du logging
@@ -113,16 +108,26 @@ transaction_repo = SQLiteTransactionRepository(sqlite_manager)
 
 # Services
 customer_service = CustomerService(customer_repo)
-credit_service = CreditService(credit_repo, customer_repo, transaction_repo)
-payment_service = PaymentService(payment_repo, credit_repo, customer_repo, transaction_repo)
+# connection_manager : crédit/paiement + total du client + journal s'écrivent en UNE
+# transaction (tout ou rien). Sans lui, une coupure au milieu laissait un
+# crédit sans journal ou un total client faux.
+credit_service = CreditService(
+    credit_repo, customer_repo, transaction_repo,
+    connection_manager=sqlite_manager, payment_repository=payment_repo,
+)
+payment_service = PaymentService(
+    payment_repo, credit_repo, customer_repo, transaction_repo,
+    connection_manager=sqlite_manager,
+)
 transaction_service = TransactionService(transaction_repo)
 
-# Injection des services dans les routers
-set_customer_service(customer_service)
-set_credit_service(credit_service)
-set_payment_service(payment_service)
-set_sync_service(sync_service)
-set_transaction_service(transaction_service)
+# Injection des services : posés sur app.state, lus par les routes via Depends
+# (voir presentation/dependencies.py). Aucune variable globale de module.
+app.state.customer_service = customer_service
+app.state.credit_service = credit_service
+app.state.payment_service = payment_service
+app.state.sync_service = sync_service
+app.state.transaction_service = transaction_service
 
 # --- Routes ---
 
@@ -134,8 +139,9 @@ app.include_router(transaction_router)
 
 
 @app.get("/health")
-def health_check():
+def health_check(request: Request):
     """Endpoint de santé — utilisé pour vérifier la disponibilité de l'API."""
+    sync_service = request.app.state.sync_service
     return {
         "status": "ok",
         "app": settings.APP_NAME,
@@ -145,7 +151,7 @@ def health_check():
 
 
 @app.get("/status/commits")
-def status_commits(limit: int = 20):
+def status_commits(limit: int = Query(20, ge=1, le=50)):
     """Endpoint pour le suivi client : renvoie les N derniers commits git."""
     import subprocess
     try:

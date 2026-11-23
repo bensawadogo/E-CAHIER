@@ -3,7 +3,7 @@ Ecahier - Implémentation SQLite du Payment Repository
 Adaptateur concret pour le port PaymentRepository.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import List, Optional
 
@@ -49,6 +49,9 @@ class SQLitePaymentRepository(PaymentRepository):
                 """
             )
             # Index pour accélérer les filtres et tris fréquents
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_payments_updated ON payments(updated_at)"
+            )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_payments_customer ON payments(customer_id)"
             )
@@ -174,8 +177,19 @@ class SQLitePaymentRepository(PaymentRepository):
             cur.execute(sql, (credit_id,) + params)
             return [self._row_to_payment(row) for row in cur.fetchall()]
 
-    def get_all(self, offset: int = 0, limit: Optional[int] = None, conn=None) -> List[Payment]:
-        """Récupère tous les paiements (paginé)."""
+    def get_all(
+        self,
+        offset: int = 0,
+        limit: Optional[int] = None,
+        conn=None,
+        updated_since: Optional[str] = None,
+    ) -> List[Payment]:
+        """Récupère tous les paiements (paginé).
+
+        ``updated_since`` (ISO 8601 UTC) : ne renvoie que les paiements modifiés
+        depuis cet instant, triés par date de modification (lecture
+        incrémentale : économise la connexion des téléphones).
+        """
         # Enforce max page size to prevent memory issues on low-end devices
         if limit is None or limit > self.MAX_PAGE_SIZE:
             limit = self.DEFAULT_PAGE_SIZE
@@ -183,18 +197,39 @@ class SQLitePaymentRepository(PaymentRepository):
         sql = (
             "SELECT id, customer_id, credit_id, amount, method, reference, "
             "note, payment_date, created_at, updated_at, sync_status "
-            "FROM payments ORDER BY payment_date DESC"
+            "FROM payments"
+            + (
+                " WHERE updated_at >= ? ORDER BY updated_at ASC, id ASC"
+                if updated_since else " ORDER BY payment_date DESC"
+            )
             + pagination
         )
+        if updated_since:
+            params = (updated_since,) + tuple(params)
         with self.connection_manager.cursor(conn) as cur:
             cur.execute(sql, params)
             return [self._row_to_payment(row) for row in cur.fetchall()]
 
-    def count_all(self, conn=None) -> int:
-        """Retourne le nombre total de paiements."""
+    def count_all(self, conn=None, updated_since: Optional[str] = None) -> int:
+        """Nombre total de paiements (modifiés depuis ``updated_since`` si fourni)."""
+        sql, params = "SELECT COUNT(*) FROM payments", ()
+        if updated_since:
+            sql, params = sql + " WHERE updated_at >= ?", (updated_since,)
         with self.connection_manager.cursor(conn) as cur:
-            cur.execute("SELECT COUNT(*) FROM payments")
+            cur.execute(sql, params)
             return int(cur.fetchone()[0])
+
+    def total_paid_for_customer(self, customer_id: str, conn=None) -> Decimal:
+        """Total payé par un client (tous crédits confondus), en Decimal exact."""
+        with self.connection_manager.cursor(conn) as cur:
+            cur.execute(
+                "SELECT amount FROM payments WHERE customer_id = ?",
+                (customer_id,),
+            )
+            total = Decimal("0")
+            for (amount_text,) in cur.fetchall():
+                total += Decimal(amount_text)
+            return total
 
     def total_paid_for_credit(self, credit_id: str, conn=None) -> Decimal:
         """Retourne le total des montants payés pour un crédit.
@@ -218,6 +253,9 @@ class SQLitePaymentRepository(PaymentRepository):
         """Met à jour un paiement existant."""
         if not payment.id:
             raise ValueError("L'ID du paiement est requis pour la mise à jour.")
+        # Toute modification date l'enregistrement : c'est ce qui permet aux
+        # téléphones de recevoir le changement (lecture incrémentale).
+        payment.updated_at = datetime.now(timezone.utc)
         with self.connection_manager.cursor(conn) as cur:
             cur.execute(
                 """

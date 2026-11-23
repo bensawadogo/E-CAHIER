@@ -6,7 +6,7 @@ Endpoints REST pour la gestion des paiements.
 import logging
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from backend.app.application.dto.payment_dto import (
     RecordPaymentRequest,
@@ -16,21 +16,12 @@ from backend.app.application.dto.payment_dto import (
 )
 from backend.app.application.services.payment_service import PaymentService
 
+from backend.app.presentation.dependencies import service_getter, updated_since_param
+
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/payments", tags=["payments"])
 
-_payment_service: Optional[PaymentService] = None
-
-
-def set_payment_service(service: PaymentService) -> None:
-    global _payment_service
-    _payment_service = service
-
-
-def get_payment_service() -> PaymentService:
-    if _payment_service is None:
-        raise RuntimeError("PaymentService non initialisé.")
-    return _payment_service
+get_payment_service = service_getter("payment_service", "PaymentService")
 
 
 def _to_response(payment) -> PaymentResponse:
@@ -44,9 +35,11 @@ def _to_response(payment) -> PaymentResponse:
 
 
 @router.post("/", response_model=PaymentResponse, status_code=status.HTTP_201_CREATED)
-def record_payment(request: RecordPaymentRequest):
+def record_payment(
+    request: RecordPaymentRequest,
+    service: PaymentService = Depends(get_payment_service),
+):
     """Enregistre un nouveau paiement."""
-    service = get_payment_service()
     try:
         return _to_response(service.record_payment(request))
     except ValueError as e:
@@ -57,11 +50,14 @@ def record_payment(request: RecordPaymentRequest):
 def list_payments(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
+    updated_since: Optional[str] = Depends(updated_since_param),
+    service: PaymentService = Depends(get_payment_service),
 ):
     """Liste les paiements avec pagination."""
-    service = get_payment_service()
     offset = (page - 1) * page_size
-    payments, total = service.get_all_payments(offset=offset, limit=page_size)
+    payments, total = service.get_all_payments(
+        offset=offset, limit=page_size, updated_since=updated_since
+    )
     return PaymentListResponse(
         payments=[_to_response(p) for p in payments],
         total=total, page=page, page_size=page_size,
@@ -69,23 +65,29 @@ def list_payments(
 
 
 @router.get("/customer/{customer_id}", response_model=List[PaymentResponse])
-def get_customer_payments(customer_id: str):
+def get_customer_payments(
+    customer_id: str,
+    service: PaymentService = Depends(get_payment_service),
+):
     """Récupère tous les paiements d'un client."""
-    service = get_payment_service()
     return [_to_response(p) for p in service.get_customer_payments(customer_id)]
 
 
 @router.get("/credit/{credit_id}", response_model=List[PaymentResponse])
-def get_credit_payments(credit_id: str):
+def get_credit_payments(
+    credit_id: str,
+    service: PaymentService = Depends(get_payment_service),
+):
     """Récupère tous les paiements liés à un crédit."""
-    service = get_payment_service()
     return [_to_response(p) for p in service.get_credit_payments(credit_id)]
 
 
 @router.get("/{payment_id}", response_model=PaymentResponse)
-def get_payment(payment_id: str):
+def get_payment(
+    payment_id: str,
+    service: PaymentService = Depends(get_payment_service),
+):
     """Récupère un paiement par son ID."""
-    service = get_payment_service()
     payment = service.get_payment(payment_id)
     if not payment:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paiement introuvable.")
@@ -93,9 +95,11 @@ def get_payment(payment_id: str):
 
 
 @router.put("/{payment_id}", response_model=PaymentResponse)
-def update_payment(payment_id: str, request: UpdatePaymentRequest):
+def update_payment(
+    payment_id: str, request: UpdatePaymentRequest,
+    service: PaymentService = Depends(get_payment_service),
+):
     """Met à jour un paiement."""
-    service = get_payment_service()
     try:
         return _to_response(service.update_payment(payment_id, request))
     except ValueError as e:
@@ -103,9 +107,11 @@ def update_payment(payment_id: str, request: UpdatePaymentRequest):
 
 
 @router.delete("/{payment_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_payment(payment_id: str):
+def delete_payment(
+    payment_id: str,
+    service: PaymentService = Depends(get_payment_service),
+):
     """Supprime un paiement."""
-    service = get_payment_service()
     try:
         service.delete_payment(payment_id)
     except ValueError as e:

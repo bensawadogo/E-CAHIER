@@ -1,3 +1,5 @@
+import '../utils/parsing.dart';
+
 class Customer {
   final String id;
   final String name;
@@ -6,10 +8,12 @@ class Customer {
   final String? notes;
   final bool isActive;
   final DateTime createdAt;
+
+  /// Totaux en FCFA, calculés par le serveur.
   final int totalCredit;
   final int totalPaid;
 
-  Customer({
+  const Customer({
     required this.id,
     required this.name,
     this.phone,
@@ -21,31 +25,30 @@ class Customer {
     this.totalPaid = 0,
   });
 
+  /// Client affiché quand l'original est introuvable (ex. pas encore reçu).
+  factory Customer.unknown() =>
+      Customer(id: '', name: 'Inconnu', createdAt: DateTime.now().toUtc());
+
   factory Customer.fromJson(Map<String, dynamic> json) {
     return Customer(
-      id: json['id'] ?? '',
-      name: json['name'] ?? '',
-      phone: json['phone'],
-      address: json['address'],
-      notes: json['notes'],
-      isActive: json['is_active'] ?? true,
-      createdAt: DateTime.parse(json['created_at'] ?? DateTime.now().toIso8601String()),
-      totalCredit: (json['total_credit'] as int?) ?? 0,
-      totalPaid: (json['total_paid'] as int?) ?? 0,
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      phone: json['phone'] as String?,
+      address: json['address'] as String?,
+      notes: json['notes'] as String?,
+      isActive: json['is_active'] as bool? ?? true,
+      createdAt: parseServerDate(json['created_at']),
+      totalCredit: parseAmount(json['total_credit']),
+      totalPaid: parseAmount(json['total_paid']),
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'name': name,
-      'phone': phone,
-      'address': address,
-      'notes': notes,
-      'is_active': isActive,
-      'created_at': createdAt.toIso8601String(),
-      'total_credit': totalCredit,
-      'total_paid': totalPaid,
-    };
-  }
+  /// Corps de la requête de création (`POST /api/customers/`).
+  Map<String, dynamic> toApiJson() => {
+        'id': id,
+        'name': name,
+        'phone': phone ?? '',
+        'address': address ?? '',
+        'notes': notes ?? '',
+      };
 }
